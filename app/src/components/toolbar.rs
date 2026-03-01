@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::app::{export_logs, AppState};
+use crate::components::pulse_panel::PulsePanel;
 use crate::components::scenario_panel::ScenarioPanel;
 
 /// Toolbar component with five sections: Sources, Attributes, Scenarios, Flow Controls, Actions.
@@ -18,6 +19,9 @@ pub fn Toolbar() -> Element {
 
             // Section: Test Scenarios
             ScenarioPanel {}
+
+            // Section: Heartbeat Pulse
+            PulsePanel {}
 
             // Section: Flow controls
             div { class: "toolbar-section",

@@ -30,4 +30,12 @@ impl PzaMqttClient {
             .await?;
         Ok(())
     }
+
+    /// Subscribes to `lulu-pulse/#` to receive all heartbeat messages.
+    pub async fn subscribe_pulse(&self) -> Result<()> {
+        self.client
+            .subscribe("lulu-pulse/#", QoS::AtMostOnce)
+            .await?;
+        Ok(())
+    }
 }

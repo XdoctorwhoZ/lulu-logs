@@ -21,6 +21,7 @@ use std::time::Duration;
 use lulu_logs_client::{
     lulu_init, lulu_is_connected, lulu_publish, lulu_shutdown, lulu_stats,
     lulu_beg_test_scenario, lulu_end_test_scenario,
+    lulu_start_pulse, lulu_stop_pulse,
     Data, LuluClientConfig, LogLevel,
 };
 
@@ -590,6 +591,30 @@ fn main() {
     // Uses lulu_beg_test_scenario() / lulu_end_test_scenario() convenience
     // helpers to demonstrate the lulu-logs v1.1.0 §3.4 test scenario types.
     inject_test_scenarios();
+
+    println!();
+
+    // ── Step 2c: heartbeat demo (lulu-logs v1.2.0 §7) ─────────────────────────
+    //
+    // lulu_start_pulse() spawns a background task that publishes a JSON payload
+    // to `lulu-pulse/{source}` every 2 seconds. The first pulse is immediate.
+    // Each registered source appears as a live "online" indicator in the UI.
+    //
+    // Here we register three sources, let them pulse for 6 seconds, then stop
+    // two of them so the UI transitions those to "offline".
+    println!("[pulse] starting heartbeats for 3 sources…");
+    lulu_start_pulse("psu/channel-1").ok();
+    lulu_start_pulse("psu/channel-2").ok();
+    lulu_start_pulse("mcp/filesystem").ok();
+
+    // Wait long enough for multiple pulse cycles to be observed by the viewer.
+    std::thread::sleep(Duration::from_secs(6));
+
+    // Stop two sources so the viewer shows them as offline after 6 s.
+    println!("[pulse] stopping psu/channel-2 and mcp/filesystem");
+    lulu_stop_pulse("psu/channel-2");
+    lulu_stop_pulse("mcp/filesystem");
+    // psu/channel-1 keeps pulsing until lulu_shutdown() cleans up all handles.
 
     println!();
 

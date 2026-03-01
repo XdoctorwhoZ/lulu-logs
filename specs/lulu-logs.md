@@ -1,7 +1,7 @@
 # lulu-logs — Spécification du protocole de logging MQTT
 
-> **Version** : 1.1.0
-> **Date** : 2026-02-26
+> **Version** : 1.2.0
+> **Date** : 2026-02-27
 > **Objectif** : Ce document décrit exhaustivement le format des topics MQTT et la structure des payloads utilisés par le protocole `lulu-logs`.
 
 ---
@@ -15,6 +15,7 @@
 4. [Schéma FlatBuffers](#4-schéma-flatbuffers)
 5. [Exemples](#5-exemples)
 6. [Règles d'encodage et contraintes](#6-règles-dencodage-et-contraintes)
+7. [Mécanisme de heartbeat (lulu-pulse)](#7-mécanisme-de-heartbeat-lulu-pulse)
 
 ---
 
@@ -331,7 +332,7 @@ Topic reçu : lulu/psu/power-supply/channel-1/voltage
 
 | Règle | Description |
 |-------|-------------|
-| **Encodage binaire** | Le payload est **toujours** un buffer FlatBuffers valide (pas de JSON, pas de texte brut). |
+| **Encodage binaire** | Le payload est **toujours** un buffer FlatBuffers valide (pas de JSON, pas de texte brut). **Exception** : les messages `lulu-pulse/…` utilisent un payload JSON UTF-8 brut (voir §7.2). |
 | **Champ `data` binaire** | Le champ `data` est un vecteur d'octets bruts (`[ubyte]`). L'encodage exact des octets est défini par le champ `type` (voir tableau 3.3). |
 | **Endianness** | FlatBuffers utilise little-endian par défaut — aucune configuration requise. |
 | **Timestamp** | Toujours UTC, format RFC 3339, précision milliseconde, suffixe `Z`. |
@@ -340,3 +341,85 @@ Topic reçu : lulu/psu/power-supply/channel-1/voltage
 | **QoS MQTT** | `AtMostOnce` (QoS 0) — les logs sont best-effort, aucune garantie de livraison n'est requise. |
 | **Retain** | `false` — les messages ne doivent pas être retenus par le broker. |
 | **Validation** | Le consommateur doit vérifier que le topic comporte au moins **3 niveaux** (`lulu` + au moins 1 segment source + 1 attribut), sinon le message est ignoré. |
+| **Pulse — validation** | Le consommateur doit vérifier que le topic `lulu-pulse/…` comporte au moins **2 niveaux** (`lulu-pulse` + au moins 1 segment source), sinon le message est ignoré. |
+
+---
+
+## 7. Mécanisme de heartbeat (lulu-pulse)
+
+### 7.1 Format du topic
+
+```
+lulu-pulse/{source_segment_1}/{source_segment_2}/.../{source_segment_n}
+```
+
+| Segment | Cardinalité | Description |
+|---------|-------------|-------------|
+| `lulu-pulse` | 1 (fixe) | Préfixe fixe du canal heartbeat |
+| `{source_segment_i}` | 1..N | Segments identifiant la source — mêmes règles de nommage qu'en §2.2 |
+
+> **Note** : Contrairement au canal `lulu/…`, il n'y a **pas** de `{attribute_name}` dans ce topic. Le dernier segment est le dernier segment de la source. Le heartbeat est une propriété de la source entière.
+
+#### Exemples de topics `lulu-pulse` valides
+
+| Topic | Source identifiée |
+|-------|-------------------|
+| `lulu-pulse/mcp/filesystem` | `mcp/filesystem` |
+| `lulu-pulse/mcp/github/pull-request` | `mcp/github/pull-request` |
+| `lulu-pulse/psu/power-supply/channel-1` | `psu/power-supply/channel-1` |
+| `lulu-pulse/my-service` | `my-service` |
+
+### 7.2 Format du payload
+
+Le payload est un document **JSON UTF-8 brut** (non FlatBuffers) contenant un unique champ :
+
+| Champ JSON | Type | Obligatoire | Description |
+|------------|------|-------------|-------------|
+| `timestamp` | string | Oui | Horodatage UTC de l'émission au format ISO 8601 RFC 3339, précision milliseconde, suffixe `Z` |
+
+**Exemple** :
+```json
+{ "timestamp": "2026-02-27T10:00:00.000Z" }
+```
+
+> **Extensibilité** : Des champs supplémentaires PEUVENT être ajoutés dans les versions futures. Les consommateurs DOIVENT ignorer les champs inconnus.
+
+### 7.3 Fréquence d'émission
+
+- Le client DOIT émettre un pulse toutes les **2 secondes** (± 200 ms de tolérance).
+- Le premier pulse DOIT être émis **immédiatement** au démarrage du client, avant l'expiration de la première période.
+- L'émission du pulse est indépendante de l'activité de logging sur le canal `lulu/…`.
+
+### 7.4 Détection de déconnexion
+
+- Un consommateur qui n'a reçu aucun pulse pour une source donnée depuis **6 secondes** (soit 3× l'intervalle nominal) DOIT considérer cette source comme **déconnectée** ou **hors-ligne**.
+- À la réception d'un nouveau pulse après une période de silence, la source repasse à l'état **connectée** immédiatement.
+- La minuterie de détection est réinitialisée à chaque pulse reçu pour cette source.
+
+| État | Condition |
+|------|-----------|
+| `online` | Un pulse a été reçu dans les 6 dernières secondes |
+| `offline` | Aucun pulse reçu depuis plus de 6 secondes (ou source jamais vue) |
+
+### 7.5 Souscription
+
+Pour surveiller toutes les sources :
+
+```
+lulu-pulse/#
+```
+
+Pour surveiller une source précise :
+
+```
+lulu-pulse/mcp/filesystem
+```
+
+La source est déduite de la **totalité des segments** après le préfixe `lulu-pulse/`, rejoints par `/`.
+
+### 7.6 Contraintes QoS et retain
+
+| Règle | Valeur |
+|-------|--------|
+| **QoS** | `AtMostOnce` (QoS 0) — même politique que le canal `lulu/…` |
+| **Retain** | `false` — les pulses ne doivent pas être retenus par le broker |

@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use dioxus::prelude::*;
 use flatbuffers;
@@ -6,7 +7,7 @@ use rumqttc::{Event, Packet};
 
 use crate::components::{log_list::LogList, status_bar::StatusBar, toolbar::Toolbar};
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
-use crate::models::{decode_data, LuluLevel, LuluLogEntry, TestScenario, ScenarioStatus};
+use crate::models::{decode_data, LuluLevel, LuluLogEntry, PulseSourceEntry, TestScenario, ScenarioStatus};
 use crate::mqtt::PzaMqttClient;
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,12 @@ pub struct AppState {
     pub scenarios: Signal<Vec<TestScenario>>,
     /// When set, only show logs belonging to this scenario (by name+source).
     pub selected_scenario: Signal<Option<(String, String)>>,
+
+    // --- Heartbeats (lulu-logs v1.2.0 §7) ---
+    /// Live source entries keyed by source string, updated on each pulse.
+    pub pulse_sources: Signal<HashMap<String, PulseSourceEntry>>,
+    /// Incremented every second by a background ticker to trigger pulse re-renders.
+    pub pulse_tick: Signal<u64>,
 }
 
 impl AppState {
@@ -76,6 +83,8 @@ impl AppState {
             total_received: Signal::new(0),
             scenarios: Signal::new(Vec::new()),
             selected_scenario: Signal::new(None),
+            pulse_sources: Signal::new(HashMap::new()),
+            pulse_tick: Signal::new(0u64),
         }
     }
 }
@@ -211,6 +220,17 @@ pub fn App() -> Element {
     // Spawn the MQTT listener once
     let _mqtt_resource = use_resource(move || spawn_mqtt_listener(state));
 
+    // Tick every second to drive online/offline transitions in PulsePanel
+    let _pulse_ticker = use_resource(move || {
+        let mut s = state;
+        async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                *s.pulse_tick.write() += 1;
+            }
+        }
+    });
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("assets/style.css") }
         div { class: "app-container",
@@ -231,6 +251,12 @@ async fn spawn_mqtt_listener(mut state: AppState) {
         return;
     }
 
+    // Subscribe to lulu-pulse/#
+    if let Err(e) = mqtt.subscribe_pulse().await {
+        tracing::error!("Failed to subscribe to lulu-pulse/#: {}", e);
+        return;
+    }
+
     state.connected.set(true);
 
     loop {
@@ -239,8 +265,29 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                 let topic = publish.topic.clone();
                 let payload_bytes: Vec<u8> = publish.payload.to_vec();
 
-                // Step 1 — Validate topic (must have at least 3 segments: lulu + source + attr)
+                // Step 1 — Route based on topic prefix
                 let segments: Vec<&str> = topic.split('/').collect();
+
+                // --- lulu-pulse/{source…} heartbeat messages ---
+                if segments[0] == "lulu-pulse" {
+                    if segments.len() < 2 {
+                        tracing::warn!("lulu-pulse topic too short: {} — ignoré", topic);
+                        continue;
+                    }
+                    let source = segments[1..].join("/");
+                    let ts = serde_json::from_slice::<serde_json::Value>(&payload_bytes)
+                        .ok()
+                        .and_then(|v| v.get("timestamp").and_then(|t| t.as_str()).map(str::to_string))
+                        .unwrap_or_default();
+                    state.pulse_sources.write().insert(
+                        source.clone(),
+                        PulseSourceEntry { source, last_seen_ts: ts, last_seen_at: Instant::now() },
+                    );
+                    continue;
+                }
+
+                // --- lulu/{source}/{attribute} log messages ---
+                // Validate topic (must have at least 3 segments: lulu + source + attr)
                 if segments.len() < 3 || segments[0] != "lulu" {
                     tracing::warn!(
                         "Topic invalide (< 3 niveaux) : {} — ignoré",
