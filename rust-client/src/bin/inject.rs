@@ -1,0 +1,617 @@
+//! # lulu-inject — Test log injector
+//!
+//! This binary serves two purposes:
+//!
+//! 1. **Programming example** — each section is heavily commented to show how
+//!    to use the `lulu-logs-client` library (init → publish → stats → shutdown).
+//!
+//! 2. **UI test data injector** — sends ~50 realistic log entries across
+//!    multiple instruments, log levels, and data types so the
+//!    hw-tests-log-app UI can be exercised with live MQTT data.
+//!
+//! # Usage
+//!
+//! ```
+//! cargo run                            # connects to 127.0.0.1:1883 (default)
+//! cargo run -- 192.168.1.10 1883       # connect to a remote broker
+//! ```
+
+use std::time::Duration;
+
+use lulu_logs_client::{
+    lulu_init, lulu_is_connected, lulu_publish, lulu_shutdown, lulu_stats,
+    lulu_beg_test_scenario, lulu_end_test_scenario,
+    Data, LuluClientConfig, LogLevel,
+};
+
+// ─── CLI argument parsing ─────────────────────────────────────────────────────
+
+struct Args {
+    broker_host: String,
+    broker_port: u16,
+}
+
+fn parse_args() -> Args {
+    let mut iter = std::env::args().skip(1);
+    let broker_host = iter.next().unwrap_or_else(|| "127.0.0.1".to_string());
+    let broker_port = iter
+        .next()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(1883u16);
+    Args {
+        broker_host,
+        broker_port,
+    }
+}
+
+// ─── Scenario definition ──────────────────────────────────────────────────────
+
+/// One log entry to inject into the system.
+struct Scenario {
+    /// MQTT source path — segments must match `[a-z0-9-]+`, separated by `/`.
+    source: &'static str,
+    /// Attribute name — must not contain `/` and must be non-empty.
+    attribute: &'static str,
+    /// Severity level (Trace / Debug / Info / Warn / Error / Fatal).
+    level: LogLevel,
+    /// Typed payload — carries both the wire type and the native value.
+    data: Data,
+    /// Human-readable description printed during injection.
+    description: &'static str,
+}
+
+fn build_scenarios() -> Vec<Scenario> {
+    vec![
+        // ── Power supply — channel 1 ─────────────────────────────────────────
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "voltage",
+            level: LogLevel::Trace,
+            data: Data::Float32(0.0),
+            description: "PSU ch1 voltage pre-init",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "voltage",
+            level: LogLevel::Debug,
+            data: Data::Float32(3.29),
+            description: "PSU ch1 voltage ramp-up",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "voltage",
+            level: LogLevel::Info,
+            data: Data::Float32(3.3),
+            description: "PSU ch1 voltage nominal",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "current",
+            level: LogLevel::Info,
+            data: Data::Float32(0.45),
+            description: "PSU ch1 current nominal",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "current",
+            level: LogLevel::Warn,
+            data: Data::Float32(0.98),
+            description: "PSU ch1 current near limit",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "current",
+            level: LogLevel::Error,
+            data: Data::Float32(1.05),
+            description: "PSU ch1 overcurrent detected",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "status",
+            level: LogLevel::Info,
+            data: Data::String("CC".to_string()),
+            description: "PSU ch1 in constant-current mode",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "status",
+            level: LogLevel::Fatal,
+            data: Data::String("FAULT".to_string()),
+            description: "PSU ch1 fault condition",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "enabled",
+            level: LogLevel::Debug,
+            data: Data::Bool(true),
+            description: "PSU ch1 output enabled",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "enabled",
+            level: LogLevel::Info,
+            data: Data::Bool(false),
+            description: "PSU ch1 output disabled",
+        },
+        Scenario {
+            source: "psu/channel-1",
+            attribute: "report",
+            level: LogLevel::Info,
+            data: Data::Json(r#"{"voltage":3.3,"current":0.45,"mode":"CV","enabled":true}"#.to_string()),
+            description: "PSU ch1 full status report",
+        },
+        // ── Power supply — channel 2 ─────────────────────────────────────────
+        Scenario {
+            source: "psu/channel-2",
+            attribute: "voltage",
+            level: LogLevel::Info,
+            data: Data::Float32(5.0),
+            description: "PSU ch2 voltage nominal",
+        },
+        Scenario {
+            source: "psu/channel-2",
+            attribute: "voltage",
+            level: LogLevel::Warn,
+            data: Data::Float32(5.21),
+            description: "PSU ch2 voltage overshoot",
+        },
+        Scenario {
+            source: "psu/channel-2",
+            attribute: "current",
+            level: LogLevel::Info,
+            data: Data::Float32(0.12),
+            description: "PSU ch2 current low",
+        },
+        Scenario {
+            source: "psu/channel-2",
+            attribute: "status",
+            level: LogLevel::Debug,
+            data: Data::String("CV".to_string()),
+            description: "PSU ch2 constant-voltage mode",
+        },
+        // ── Oscilloscope — probe A ────────────────────────────────────────────
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "frequency",
+            level: LogLevel::Info,
+            data: Data::Float64(1_000_000.0),
+            description: "Probe A signal 1 MHz",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "frequency",
+            level: LogLevel::Debug,
+            data: Data::Float64(999_847.3),
+            description: "Probe A freq fine reading",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "amplitude",
+            level: LogLevel::Info,
+            data: Data::Float32(1.8),
+            description: "Probe A amplitude nominal",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "amplitude",
+            level: LogLevel::Warn,
+            data: Data::Float32(3.7),
+            description: "Probe A amplitude high",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "clipped",
+            level: LogLevel::Error,
+            data: Data::Bool(true),
+            description: "Probe A input clipping",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "clipped",
+            level: LogLevel::Info,
+            data: Data::Bool(false),
+            description: "Probe A no clipping",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "sample-count",
+            level: LogLevel::Trace,
+            data: Data::Int32(1024),
+            description: "Probe A sample buffer 1 K",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "sample-count",
+            level: LogLevel::Debug,
+            data: Data::Int32(2048),
+            description: "Probe A sample buffer 2 K",
+        },
+        Scenario {
+            source: "oscilloscope/probe-a",
+            attribute: "report",
+            level: LogLevel::Debug,
+            data: Data::Json(
+                r#"{"freq_hz":1000000.0,"amplitude_v":1.8,"clipped":false,"samples":1024}"#.to_string(),
+            ),
+            description: "Probe A full report",
+        },
+        // ── Oscilloscope — probe B ────────────────────────────────────────────
+        Scenario {
+            source: "oscilloscope/probe-b",
+            attribute: "frequency",
+            level: LogLevel::Info,
+            data: Data::Float64(50.0),
+            description: "Probe B mains 50 Hz",
+        },
+        Scenario {
+            source: "oscilloscope/probe-b",
+            attribute: "amplitude",
+            level: LogLevel::Info,
+            data: Data::Float32(230.0),
+            description: "Probe B mains 230 V rms",
+        },
+        Scenario {
+            source: "oscilloscope/probe-b",
+            attribute: "amplitude",
+            level: LogLevel::Fatal,
+            data: Data::Float32(265.0),
+            description: "Probe B mains overvoltage!",
+        },
+        // ── Multimeter — DC ───────────────────────────────────────────────────
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "voltage",
+            level: LogLevel::Trace,
+            data: Data::Float64(0.0),
+            description: "DMM zeroing",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "voltage",
+            level: LogLevel::Debug,
+            data: Data::Float64(3.297),
+            description: "DMM voltage reading",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "voltage",
+            level: LogLevel::Info,
+            data: Data::Float64(3.300),
+            description: "DMM voltage nominal",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "voltage",
+            level: LogLevel::Warn,
+            data: Data::Float64(3.401),
+            description: "DMM voltage slightly high",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "resistance",
+            level: LogLevel::Info,
+            data: Data::Float64(10_000.0),
+            description: "DMM resistance 10 kΩ",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "resistance",
+            level: LogLevel::Warn,
+            data: Data::Float64(10_850.0),
+            description: "DMM resistance out of tolerance",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "continuity",
+            level: LogLevel::Info,
+            data: Data::Bool(true),
+            description: "DMM continuity OK",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "continuity",
+            level: LogLevel::Error,
+            data: Data::Bool(false),
+            description: "DMM continuity FAIL",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "range",
+            level: LogLevel::Debug,
+            data: Data::String("auto".to_string()),
+            description: "DMM auto-range selected",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "overload",
+            level: LogLevel::Error,
+            data: Data::Bool(true),
+            description: "DMM input overload",
+        },
+        Scenario {
+            source: "multimeter/dc",
+            attribute: "report",
+            level: LogLevel::Info,
+            data: Data::Json(
+                r#"{"voltage_v":3.3,"resistance_ohm":10000,"continuity":true,"range":"auto"}"#.to_string(),
+            ),
+            description: "DMM full report",
+        },
+        // ── Function generator — output 1 ────────────────────────────────────
+        Scenario {
+            source: "funcgen/output-1",
+            attribute: "waveform",
+            level: LogLevel::Debug,
+            data: Data::String("sine".to_string()),
+            description: "Funcgen waveform type",
+        },
+        Scenario {
+            source: "funcgen/output-1",
+            attribute: "frequency",
+            level: LogLevel::Info,
+            data: Data::Float64(10_000.0),
+            description: "Funcgen 10 kHz",
+        },
+        Scenario {
+            source: "funcgen/output-1",
+            attribute: "amplitude",
+            level: LogLevel::Info,
+            data: Data::Float32(1.0),
+            description: "Funcgen 1 Vpp",
+        },
+        Scenario {
+            source: "funcgen/output-1",
+            attribute: "offset",
+            level: LogLevel::Trace,
+            data: Data::Float32(0.0),
+            description: "Funcgen DC offset zero",
+        },
+        Scenario {
+            source: "funcgen/output-1",
+            attribute: "enabled",
+            level: LogLevel::Info,
+            data: Data::Bool(true),
+            description: "Funcgen output on",
+        },
+        // ── Test session metadata ─────────────────────────────────────────────
+        Scenario {
+            source: "session/run-001",
+            attribute: "name",
+            level: LogLevel::Info,
+            data: Data::String("voltage-sweep-test".to_string()),
+            description: "Test session name",
+        },
+        Scenario {
+            source: "session/run-001",
+            attribute: "step",
+            level: LogLevel::Info,
+            data: Data::Int32(1),
+            description: "Test step 1",
+        },
+        Scenario {
+            source: "session/run-001",
+            attribute: "step",
+            level: LogLevel::Info,
+            data: Data::Int32(2),
+            description: "Test step 2",
+        },
+        Scenario {
+            source: "session/run-001",
+            attribute: "result",
+            level: LogLevel::Info,
+            data: Data::String("PASS".to_string()),
+            description: "Test result PASS",
+        },
+        Scenario {
+            source: "session/run-001",
+            attribute: "result",
+            level: LogLevel::Error,
+            data: Data::String("FAIL".to_string()),
+            description: "Test result FAIL",
+        },
+        Scenario {
+            source: "session/run-001",
+            attribute: "summary",
+            level: LogLevel::Info,
+            data: Data::Json(
+                r#"{"name":"voltage-sweep-test","steps":2,"passed":1,"failed":1,"duration_ms":4200}"#.to_string(),
+            ),
+            description: "Test session summary",
+        },
+    ]
+}
+
+/// Injects test scenarios using the dedicated `beg_test_scenario` / `end_test_scenario`
+/// convenience helpers. This demonstrates the lulu-logs v1.1.0 §3.4 test lifecycle.
+fn inject_test_scenarios() {
+    println!("─── Test Scenarios (lulu-logs v1.1.0 §3.4) ──────────");
+
+    // ── Scenario 1: passing test ──────────────────────────────────────────
+    let source = "psu/channel-1";
+    let attr = "scenario";
+    let name = "voltage-regulation-3v3";
+
+    print_scenario_step("BEG", source, attr, name);
+    let _ = lulu_beg_test_scenario(source, attr, name);
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Some normal logs in between (these belong to the scenario)
+    let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.30));
+    println!("      ↳ psu/channel-1/voltage = 3.30 (float32)");
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.31));
+    println!("      ↳ psu/channel-1/voltage = 3.31 (float32)");
+    std::thread::sleep(Duration::from_millis(200));
+
+    print_scenario_step("END", source, attr, &format!("{} → SUCCESS", name));
+    let _ = lulu_end_test_scenario(source, attr, name, true, None);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // ── Scenario 2: failing test ──────────────────────────────────────────
+    let name2 = "overcurrent-protection";
+
+    print_scenario_step("BEG", source, attr, name2);
+    let _ = lulu_beg_test_scenario(source, attr, name2);
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = lulu_publish(source, "current", LogLevel::Info, Data::Float32(0.45));
+    println!("      ↳ psu/channel-1/current = 0.45 (float32)");
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = lulu_publish(source, "current", LogLevel::Warn, Data::Float32(0.98));
+    println!("      ↳ psu/channel-1/current = 0.98 (float32) [warn]");
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = lulu_publish(source, "current", LogLevel::Error, Data::Float32(1.05));
+    println!("      ↳ psu/channel-1/current = 1.05 (float32) [error]");
+    std::thread::sleep(Duration::from_millis(200));
+
+    print_scenario_step("END", source, attr, &format!("{} → FAIL", name2));
+    let _ = lulu_end_test_scenario(
+        source,
+        attr,
+        name2,
+        false,
+        Some("Current reached 1.05A, protection did not trigger within 100ms"),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    // ── Scenario 3: in-progress (no end) ──────────────────────────────────
+    let source3 = "oscilloscope/probe-a";
+    let name3 = "signal-integrity-check";
+
+    print_scenario_step("BEG", source3, attr, name3);
+    let _ = lulu_beg_test_scenario(source3, attr, name3);
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = lulu_publish(source3, "frequency", LogLevel::Info, Data::Float64(1_000_000.0));
+    println!("      ↳ oscilloscope/probe-a/frequency = 1MHz (float64)");
+    std::thread::sleep(Duration::from_millis(200));
+
+    println!("      ↳ (scenario left open — in progress)");
+    println!("────────────────────────────────────────────────────────");
+}
+
+fn print_scenario_step(tag: &str, source: &str, attr: &str, info: &str) {
+    println!("  [{tag}] {source}/{attr} — {info}");
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+fn main() {
+    let args = parse_args();
+
+    println!("lulu-inject — MQTT test log injector");
+    println!("  broker : {}:{}", args.broker_host, args.broker_port);
+    println!();
+
+    // ── Step 1: initialise the lulu-logs-client library ───────────────────────────
+    //
+    // lulu_init() must be called exactly once per process.
+    // It spawns a dedicated background Tokio runtime and establishes the MQTT
+    // connection. The call blocks until the internal state is ready but does
+    // NOT wait for the MQTT handshake to complete.
+    let config = LuluClientConfig {
+        broker_host: args.broker_host,
+        broker_port: args.broker_port,
+        // Prefix used to build the MQTT client ID (a random suffix is appended
+        // automatically to avoid collisions when running multiple instances).
+        client_id_prefix: "lulu-inject".to_string(),
+        // How many messages may be queued while the broker is unreachable.
+        queue_capacity: 256,
+        // MQTT keep-alive interval in seconds.
+        keep_alive_secs: 5,
+    };
+
+    if let Err(e) = lulu_init(config) {
+        eprintln!("[ERROR] lulu_init failed: {e}");
+        std::process::exit(1);
+    }
+
+    println!("[init] lulu-logs-client initialised");
+
+    // Give the MQTT connection a moment to complete its handshake.
+    // In production code you can poll lulu_is_connected() in a retry loop
+    // instead of using a blind sleep.
+    std::thread::sleep(Duration::from_millis(500));
+
+    if lulu_is_connected() {
+        println!("[init] MQTT broker connected");
+    } else {
+        println!("[init] MQTT broker not yet connected — messages will be queued and flushed once connected");
+    }
+
+    println!();
+
+    // ── Step 2: publish all test scenarios ───────────────────────────────────
+    //
+    // lulu_publish() is non-blocking: it validates the arguments and places a
+    // PendingMessage on an internal async channel. A background task picks it
+    // up, serialises it as a FlatBuffers LogEntry, and publishes it over MQTT.
+    //
+    // Topic format:  lulu/{source_seg1}/{source_seg2}/.../{attribute}
+    // Source rules:  each path segment must match [a-z0-9-]+ (no uppercase,
+    //                no spaces, no slashes at start/end).
+    // Attribute:     must be non-empty and must not contain '/'.
+    // data:          Data enum variant carrying the native value —
+    //                e.g. Data::Float32(3.3), Data::String("ok".into()), Data::Bool(true).
+
+    let scenarios = build_scenarios();
+    let total = scenarios.len();
+
+    for (i, s) in scenarios.into_iter().enumerate() {
+        let idx = i + 1;
+
+        let data_type = s.data.data_type();
+        match lulu_publish(s.source, s.attribute, s.level, s.data) {
+            Ok(()) => {
+                println!(
+                    "[{:>2}/{}] OK   {}/{} — {} ({})",
+                    idx, total, s.source, s.attribute, s.description, data_type
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "[{:>2}/{}] ERR  {}/{} — {e}",
+                    idx, total, s.source, s.attribute
+                );
+            }
+        }
+
+        // Pace the injection so the UI renders messages progressively.
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    println!();
+
+    // ── Step 2b: inject test scenarios (beg/end lifecycle) ────────────────────
+    //
+    // Uses lulu_beg_test_scenario() / lulu_end_test_scenario() convenience
+    // helpers to demonstrate the lulu-logs v1.1.0 §3.4 test scenario types.
+    inject_test_scenarios();
+
+    println!();
+
+    // ── Step 3: display stats ─────────────────────────────────────────────────
+    //
+    // lulu_stats() returns counters maintained by the background send-loop.
+    if let Some(stats) = lulu_stats() {
+        println!("─── Stats ───────────────────────────────────");
+        println!("  published : {}", stats.messages_published);
+        println!("  dropped   : {}", stats.messages_dropped);
+        println!("  queued    : {} pending", stats.queue_current_size);
+        println!("  reconnect : {} times", stats.reconnections);
+        println!("─────────────────────────────────────────────");
+        println!();
+    }
+
+    // ── Step 4: shutdown ──────────────────────────────────────────────────────
+    //
+    // lulu_shutdown() drains the outgoing queue (up to 5 s timeout), then
+    // tears down the MQTT connection and stops the background runtime.
+    // Call this before the process exits to avoid losing enqueued messages.
+    println!("[shutdown] draining queue…");
+    lulu_shutdown();
+    println!("[shutdown] done");
+}
