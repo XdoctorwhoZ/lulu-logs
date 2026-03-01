@@ -1,0 +1,18 @@
+// lulu_export.fbs — Format de fichier .lulu
+// Tableau associatif topic → payload brut FlatBuffers
+
+namespace LuluExport;
+
+// Un enregistrement de log : topic MQTT complet + payload FlatBuffers original.
+table LogRecord {
+  topic   : string  (required);
+  payload : [ubyte] (required);
+}
+
+// Fichier d'export complet.
+table LuluExportFile {
+  version : uint32 = 1;
+  records : [LogRecord] (required);
+}
+
+root_type LuluExportFile;
