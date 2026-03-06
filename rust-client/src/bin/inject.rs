@@ -603,9 +603,9 @@ fn main() {
     // Here we register three sources, let them pulse for 6 seconds, then stop
     // two of them so the UI transitions those to "offline".
     println!("[pulse] starting heartbeats for 3 sources…");
-    lulu_start_pulse("psu/channel-1").ok();
-    lulu_start_pulse("psu/channel-2").ok();
-    lulu_start_pulse("mcp/filesystem").ok();
+    lulu_start_pulse("psu/channel-1", Some("1.0.0")).ok();
+    lulu_start_pulse("psu/channel-2", Some("1.0.0")).ok();
+    lulu_start_pulse("mcp/filesystem", None).ok();
 
     // Wait long enough for multiple pulse cycles to be observed by the viewer.
     std::thread::sleep(Duration::from_secs(6));

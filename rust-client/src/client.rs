@@ -154,6 +154,7 @@ impl LuluClient {
         &self,
         source: String,
         pulse_topic: String,
+        version: Option<String>,
         rt: &tokio::runtime::Runtime,
     ) {
         let mqtt = self.mqtt_client.clone();
@@ -165,7 +166,10 @@ impl LuluClient {
                 let ts = chrono::Utc::now()
                     .format("%Y-%m-%dT%H:%M:%S%.3fZ")
                     .to_string();
-                let payload = format!(r#"{{"timestamp":"{}"}}"#, ts);
+                let payload = match &version {
+                    Some(v) => serde_json::json!({"timestamp": ts, "version": v}).to_string(),
+                    None    => serde_json::json!({"timestamp": ts}).to_string(),
+                };
                 if let Err(e) = mqtt
                     .publish(&pulse_topic, QoS::AtMostOnce, false, payload.into_bytes())
                     .await

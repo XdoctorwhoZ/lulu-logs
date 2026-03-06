@@ -44,11 +44,15 @@ pub fn PulsePanel() -> Element {
                             let label = entry.status_label();
                             let src = entry.source.clone();
                             let ts  = entry.last_seen_ts.clone();
+                            let ver = entry.version.clone();
                             rsx! {
                                 div { class: "pulse-item",
                                     span { class: "{dot_class}", title: "{label}" }
                                     div { class: "pulse-item-info",
                                         span { class: "pulse-item-name", "{src}" }
+                                        if let Some(v) = ver {
+                                            span { class: "pulse-item-version", "v{v}" }
+                                        }
                                         span { class: "pulse-item-ts",   "{ts}"  }
                                     }
                                 }

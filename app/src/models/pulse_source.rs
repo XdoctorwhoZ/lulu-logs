@@ -13,6 +13,8 @@ pub struct PulseSourceEntry {
     pub last_seen_ts: String,
     /// Monotonic instant at which the last pulse was received.
     pub last_seen_at: Instant,
+    /// Optional version string reported by the source (e.g. `"1.2.3"`).
+    pub version: Option<String>,
 }
 
 impl PulseSourceEntry {

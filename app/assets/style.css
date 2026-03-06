@@ -507,6 +507,15 @@ body {
     white-space: nowrap;
 }
 
+.pulse-item-version {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Status dot */
 .pulse-dot {
     flex-shrink: 0;

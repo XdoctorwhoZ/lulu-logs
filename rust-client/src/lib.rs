@@ -172,12 +172,12 @@ pub fn lulu_stats() -> Option<LuluStats> {
 /// # Errors
 /// Returns `LuluError::NotInitialized` if `lulu_init()` has not been called,
 /// or `LuluError::InvalidSource` if `source` contains invalid segments.
-pub fn lulu_start_pulse(source: &str) -> Result<(), LuluError> {
+pub fn lulu_start_pulse(source: &str, version: Option<&str>) -> Result<(), LuluError> {
     let client = GLOBAL_CLIENT.get().ok_or(LuluError::NotInitialized)?;
     let source_segments = topic::parse_source(source)?;
     let pulse_topic = topic::build_pulse_topic(&source_segments);
     let rt = get_or_init_runtime();
-    client.start_pulse(source.to_string(), pulse_topic, rt);
+    client.start_pulse(source.to_string(), pulse_topic, version.map(str::to_string), rt);
     Ok(())
 }
 

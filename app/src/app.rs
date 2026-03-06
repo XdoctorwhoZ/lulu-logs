@@ -275,13 +275,17 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                         continue;
                     }
                     let source = segments[1..].join("/");
-                    let ts = serde_json::from_slice::<serde_json::Value>(&payload_bytes)
-                        .ok()
+                    let json_val = serde_json::from_slice::<serde_json::Value>(&payload_bytes).ok();
+                    let ts = json_val
+                        .as_ref()
                         .and_then(|v| v.get("timestamp").and_then(|t| t.as_str()).map(str::to_string))
                         .unwrap_or_default();
+                    let version = json_val
+                        .as_ref()
+                        .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(str::to_string));
                     state.pulse_sources.write().insert(
                         source.clone(),
-                        PulseSourceEntry { source, last_seen_ts: ts, last_seen_at: Instant::now() },
+                        PulseSourceEntry { source, last_seen_ts: ts, last_seen_at: Instant::now(), version },
                     );
                     continue;
                 }

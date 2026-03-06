@@ -371,15 +371,21 @@ lulu-pulse/{source_segment_1}/{source_segment_2}/.../{source_segment_n}
 
 ### 7.2 Format du payload
 
-Le payload est un document **JSON UTF-8 brut** (non FlatBuffers) contenant un unique champ :
+Le payload est un document **JSON UTF-8 brut** (non FlatBuffers) :
 
 | Champ JSON | Type | Obligatoire | Description |
 |------------|------|-------------|-------------|
 | `timestamp` | string | Oui | Horodatage UTC de l'émission au format ISO 8601 RFC 3339, précision milliseconde, suffixe `Z` |
+| `version` | string | Non | Version de la source (format libre, typiquement SemVer, ex. `"1.2.3"`). Absent si la source n'expose pas de version. |
 
-**Exemple** :
+**Exemple minimal** (sans version) :
 ```json
 { "timestamp": "2026-02-27T10:00:00.000Z" }
+```
+
+**Exemple avec version** :
+```json
+{ "timestamp": "2026-02-27T10:00:00.000Z", "version": "1.2.3" }
 ```
 
 > **Extensibilité** : Des champs supplémentaires PEUVENT être ajoutés dans les versions futures. Les consommateurs DOIVENT ignorer les champs inconnus.
