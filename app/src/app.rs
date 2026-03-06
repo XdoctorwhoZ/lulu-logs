@@ -5,10 +5,11 @@ use dioxus::prelude::*;
 use flatbuffers;
 use rumqttc::{Event, Packet};
 
-use crate::components::{log_list::LogList, sidebar::Sidebar, status_bar::StatusBar};
+use crate::components::{log_list::LogList, lens_view::LensView, sidebar::Sidebar, status_bar::StatusBar};
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
 use crate::models::{
-    decode_data, LuluLevel, LuluLogEntry, PulseSourceEntry, ScenarioStatus, TestScenario,
+    decode_data, ActiveView, LensLayout, LensPinData, LuluLevel, LuluLogEntry,
+    PulseSourceEntry, ScenarioStatus, TestScenario,
 };
 use crate::mqtt::PzaMqttClient;
 
@@ -84,6 +85,14 @@ pub struct AppState {
     // --- Sidebar ---
     /// Currently active side panel (None = side panel closed).
     pub active_panel: Signal<Option<ActivePanel>>,
+
+    // --- Lens ---
+    /// Which view is active in the main area (LogList or Lens).
+    pub active_view: Signal<ActiveView>,
+    /// Pinned (source, attribute) widgets in the Lens.
+    pub lens_pins: Signal<Vec<LensPinData>>,
+    /// Current layout preset for Lens widgets.
+    pub lens_layout: Signal<LensLayout>,
 }
 
 impl AppState {
@@ -106,6 +115,9 @@ impl AppState {
             pulse_sources: Signal::new(HashMap::new()),
             pulse_tick: Signal::new(0u64),
             active_panel: Signal::new(Some(ActivePanel::Sources)),
+            active_view: Signal::new(ActiveView::LogList),
+            lens_pins: Signal::new(Vec::new()),
+            lens_layout: Signal::new(LensLayout::Mosaic),
         }
     }
 }
@@ -261,9 +273,37 @@ pub fn App() -> Element {
         div { class: "app-container",
             div { class: "app-body",
                 Sidebar {}
-                LogList {}
+                div { class: "main-area",
+                    ViewSwitcher {}
+                    match *state.active_view.read() {
+                        ActiveView::LogList => rsx! { LogList {} },
+                        ActiveView::Lens => rsx! { LensView {} },
+                    }
+                }
             }
             StatusBar {}
+        }
+    }
+}
+
+/// Tabs to switch between LogList and Lens.
+#[component]
+fn ViewSwitcher() -> Element {
+    let mut state = use_context::<AppState>();
+    let active = *state.active_view.read();
+
+    rsx! {
+        div { class: "view-switcher",
+            button {
+                class: if active == ActiveView::LogList { "view-tab active" } else { "view-tab" },
+                onclick: move |_| state.active_view.set(ActiveView::LogList),
+                "LogList"
+            }
+            button {
+                class: if active == ActiveView::Lens { "view-tab active" } else { "view-tab" },
+                onclick: move |_| state.active_view.set(ActiveView::Lens),
+                "Lens"
+            }
         }
     }
 }
@@ -396,11 +436,21 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                         timestamp: timestamp.clone(),
                         level,
                         data_type: data_type.clone(),
-                        decoded_value,
+                        decoded_value: decoded_value.clone(),
                         raw_payload: payload_bytes,
                     });
                     idx
                 };
+
+                // Step 5b — Feed Lens pins
+                {
+                    let mut pins = state.lens_pins.write();
+                    for pin in pins.iter_mut() {
+                        if pin.matches(&source, &attribute) {
+                            pin.push_value(timestamp.clone(), decoded_value.clone());
+                        }
+                    }
+                }
 
                 // Step 5 — Track test scenarios (lulu-logs v1.1.0 §3.4)
                 if data_type == "beg_test_scenario" || data_type == "end_test_scenario" {

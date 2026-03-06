@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::bs_icons::{
-    BsCheck2Square, BsFolder, BsGear, BsHeartPulse, BsTags,
-};
+use dioxus_free_icons::icons::bs_icons::{BsCheck2Square, BsFolder, BsGear, BsHeartPulse, BsTags};
 use dioxus_free_icons::Icon;
 
 use crate::app::{export_logs, ActivePanel, AppState};
@@ -353,6 +351,9 @@ fn ControlsPanel() -> Element {
                     onclick: move |_| {
                         state.logs.write().clear();
                         state.total_received.set(0);
+                        for pin in state.lens_pins.write().iter_mut() {
+                            pin.values.clear();
+                        }
                     },
                     "🗑 Clear"
                 }

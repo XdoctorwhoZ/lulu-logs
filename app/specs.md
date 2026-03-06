@@ -72,3 +72,83 @@ Le Side Panel affiche en en-tête le nom de la section active (ex. « SOURCES »
 ### 1.4 État par défaut
 
 Au lancement, le Side Panel s'ouvre sur **Sources**.
+
+---
+
+## 2. Lens
+
+### 2.1 Vue d'ensemble
+
+La **Lens** est une vue alternative à la LogList, occupant le même espace (`flex-grow`). L'utilisateur bascule entre LogList et Lens via un **sélecteur de vue** (tabs toggle) placé en haut de la zone centrale.
+
+```
+┌──────────────────────────────────────────────────┐
+│ Activity │ Side Panel │ [LogList] [Lens]          │
+│   Bar    │            ├───────────────────────────┤
+│          │            │                           │
+│          │            │   contenu de la vue       │
+│          │            │   active                  │
+│          │            │                           │
+├──────────┴────────────┴───────────────────────────┤
+│                     StatusBar                     │
+└──────────────────────────────────────────────────┘
+```
+
+### 2.2 Épinglage d'un attribut
+
+Un **clic droit** sur n'importe quelle entrée de la LogList ouvre un menu contextuel contenant l'action :
+
+> **Épingler « {attribute} » de « {source} »** sur la Lens
+
+- L'action est disponible pour toutes les entrées, quel que soit le type de donnée.
+- Épingler le même couple `(source, attribute)` une deuxième fois est sans effet (dédoublonnage silencieux).
+- Un couple épinglé peut être **désépinglé** depuis la Lens via le bouton ✕ du widget.
+- L'état des pins est conservé en mémoire pendant la session ; il n'est pas persisté entre les lancements.
+- Au moment de l'épinglage, le widget est **pré-rempli** avec les données historiques déjà présentes dans `state.logs` pour ce couple `(source, attribute)` (jusqu'à N valeurs, les plus récentes en premier). Les nouvelles valeurs s'y ajoutent ensuite en temps réel.
+
+### 2.3 Widgets
+
+Chaque couple `(source, attribute)` épinglé est représenté par un **widget** dans la Lens. Le widget affiché dépend du type de donnée de l'attribut.
+
+#### Types supportés et widgets associés
+
+| Type de donnée        | Widget                                                                                      |
+|-----------------------|---------------------------------------------------------------------------------------------|
+| Numérique (int/float) | **Sparkline** — courbe d'évolution des N dernières valeurs reçues                           |
+| Booléen               | **Timeline binaire** — barre horizontale colorée (vert/rouge) représentant l'historique des transitions vrai/faux |
+| Chaîne de caractères  | **Historique texte** — liste scrollable des N dernières valeurs reçues avec timestamp        |
+| Type non supporté     | **Placeholder** — carte grisée affichant le nom du couple `(source, attribute)` et la mention « Type non pris en charge » |
+
+> Le nombre N de valeurs conservées par widget est fixé à **1000** par défaut. Ce buffer de 1000 valeurs est partagé entre les données historiques (chargées au moment du pin) et les nouvelles données reçues en temps réel. Si l'historique contient déjà 1000 valeurs ou plus, seules les 1000 les plus récentes sont chargées ; les suivantes évincent les plus anciennes (ring buffer).
+> 
+> Lorsque les logs sont effacés (bouton Clear), les buffers de tous les widgets épinglés sont également vidés.
+
+#### Anatomie d'un widget
+
+Chaque widget possède :
+- Un **en-tête** : nom de la source (muted) + `/` + nom de l'attribut (primary) + bouton ✕ (désépingler, aligné à droite)
+- Un **corps** : visualisation propre au type (cf. tableau ci-dessus)
+- Un **pied** : dernière valeur reçue + timestamp relatif (ex. « il y a 2 s »)
+
+### 2.4 Layouts
+
+La Lens propose plusieurs dispositions prédéfinies, sélectionnables via un sélecteur de layout dans la barre d'en-tête de la Lens.
+
+| Nom          | Description                                                           |
+|--------------|-----------------------------------------------------------------------|
+| **Colonne**  | Widgets empilés verticalement (1 par ligne), pleine largeur           |
+| **Grille 2×** | 2 widgets par ligne                                                  |
+| **Grille 3×** | 3 widgets par ligne                                                  |
+| **Mosaïque** | Largeur automatique (min 280 px), wrapping CSS flex                   |
+
+Le layout sélectionné est conservé en mémoire pendant la session.
+
+### 2.5 État vide
+
+Lorsqu'aucun attribut n'est épinglé, la Lens affiche un état vide explicite :
+
+> *Aucun attribut épinglé. Faites un clic droit sur une entrée de la LogList pour épingler un attribut.*
+
+### 2.6 État par défaut
+
+Au lancement, la vue active est **LogList**. La Lens est vide (aucun pin).
