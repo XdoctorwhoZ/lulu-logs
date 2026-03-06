@@ -106,6 +106,17 @@ Un **clic droit** sur n'importe quelle entrée de la LogList ouvre un menu conte
 - L'état des pins est conservé en mémoire pendant la session ; il n'est pas persisté entre les lancements.
 - Au moment de l'épinglage, le widget est **pré-rempli** avec les données historiques déjà présentes dans `state.logs` pour ce couple `(source, attribute)` (jusqu'à N valeurs, les plus récentes en premier). Les nouvelles valeurs s'y ajoutent ensuite en temps réel.
 
+#### Épinglage combiné RX + TX
+
+Lorsque l'entrée est de type `bytes` et que l'attribut est `"RX"` ou `"TX"`, le menu contextuel propose un second choix :
+
+> **Épingler « RX + TX » de « {source} »** sur la Lens
+
+- Crée un widget unique affichant les deux flux entrelacés chronologiquement.
+- Les données RX sont affichées en vert (couleur terminal par défaut), les données TX en bleu (couleur d'accent).
+- Le dédoublonnage s'applique sur le triplet `(source, "RX", paired="TX")`.
+- Le pré-remplissage historique inclut les entrées des deux attributs, triées par timestamp.
+
 ### 2.3 Widgets
 
 Chaque couple `(source, attribute)` épinglé est représenté par un **widget** dans la Lens. Le widget affiché dépend du type de donnée de l'attribut.
@@ -117,6 +128,7 @@ Chaque couple `(source, attribute)` épinglé est représenté par un **widget**
 | Numérique (int/float) | **Sparkline** — courbe d'évolution des N dernières valeurs reçues                           |
 | Booléen               | **Timeline binaire** — barre horizontale colorée (vert/rouge) représentant l'historique des transitions vrai/faux |
 | Chaîne de caractères  | **Historique texte** — liste scrollable des N dernières valeurs reçues avec timestamp        |
+| Bytes                 | **Terminal sériel** — affichage des données brutes en tant que sortie de terminal ASCII avec support des séquences de contrôle, color-codage RX/TX, et auto-scroll |
 | Type non supporté     | **Placeholder** — carte grisée affichant le nom du couple `(source, attribute)` et la mention « Type non pris en charge » |
 
 > Le nombre N de valeurs conservées par widget est fixé à **1000** par défaut. Ce buffer de 1000 valeurs est partagé entre les données historiques (chargées au moment du pin) et les nouvelles données reçues en temps réel. Si l'historique contient déjà 1000 valeurs ou plus, seules les 1000 les plus récentes sont chargées ; les suivantes évincent les plus anciennes (ring buffer).
@@ -129,6 +141,17 @@ Chaque widget possède :
 - Un **en-tête** : nom de la source (muted) + `/` + nom de l'attribut (primary) + bouton ✕ (désépingler, aligné à droite)
 - Un **corps** : visualisation propre au type (cf. tableau ci-dessus)
 - Un **pied** : dernière valeur reçue + timestamp relatif (ex. « il y a 2 s »)
+
+#### Terminal sériel (widget bytes)
+
+Le widget Terminal sériel affiche les données brutes (bytes) sous forme de sortie ASCII :
+
+- Chaque valeur reçue est décodée en UTF-8 (conversion lossy pour les séquences invalides).
+- Les séquences de contrôle basiques sont traitées : `\r\n` et `\r` → saut de ligne, `\x08`/`\x7F` → suppression du dernier caractère, `\x07` (BEL) et `\x03` (Ctrl+C) → ignorés silencieusement.
+- Le terminal défile automatiquement vers le bas à chaque rendu (auto-scroll).
+- Apparence : fond noir (#0d0d0d), police monospace, texte vert avec glow vert (#00ff00).
+- En mode combiné RX + TX, les chunks TX sont affichés en bleu (#569cd6) avec glow bleu.
+- Les séquences VT100/ANSI (positionnement curseur, couleurs) ne sont **pas** supportées en V1.
 
 ### 2.4 Layouts
 

@@ -5,11 +5,13 @@ use dioxus::prelude::*;
 use flatbuffers;
 use rumqttc::{Event, Packet};
 
-use crate::components::{log_list::LogList, lens_view::LensView, sidebar::Sidebar, status_bar::StatusBar};
+use crate::components::{
+    lens_view::LensView, log_list::LogList, sidebar::Sidebar, status_bar::StatusBar,
+};
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
 use crate::models::{
-    decode_data, ActiveView, LensLayout, LensPinData, LuluLevel, LuluLogEntry,
-    PulseSourceEntry, ScenarioStatus, TestScenario,
+    decode_data, ActiveView, LensLayout, LensPinData, LuluLevel, LuluLogEntry, PulseSourceEntry,
+    ScenarioStatus, TestScenario,
 };
 use crate::mqtt::PzaMqttClient;
 
@@ -437,6 +439,7 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                         level,
                         data_type: data_type.clone(),
                         decoded_value: decoded_value.clone(),
+                        data_bytes: data_bytes.clone(),
                         raw_payload: payload_bytes,
                     });
                     idx
@@ -444,10 +447,25 @@ async fn spawn_mqtt_listener(mut state: AppState) {
 
                 // Step 5b — Feed Lens pins
                 {
+                    let bytes_opt = if data_type == "bytes" {
+                        Some(data_bytes.clone())
+                    } else {
+                        None
+                    };
+                    let attr_opt = if data_type == "bytes" {
+                        Some(attribute.clone())
+                    } else {
+                        None
+                    };
                     let mut pins = state.lens_pins.write();
                     for pin in pins.iter_mut() {
                         if pin.matches(&source, &attribute) {
-                            pin.push_value(timestamp.clone(), decoded_value.clone());
+                            pin.push_value(
+                                timestamp.clone(),
+                                decoded_value.clone(),
+                                bytes_opt.clone(),
+                                attr_opt.clone(),
+                            );
                         }
                     }
                 }

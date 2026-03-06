@@ -1076,4 +1076,43 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* Bytes terminal */
+
+.bytes-terminal {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.bytes-terminal-output {
+    width: 100%;
+    flex: 1;
+    padding: 8px 10px;
+    background: #0d0d0d;
+    color: #00ff00;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    line-height: 1.4;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-radius: 2px;
+    text-shadow: 0 0 2px rgba(0, 255, 0, 0.3);
+}
+
+.bytes-terminal-chunk {
+    white-space: pre-wrap;
+}
+
+.bytes-terminal-rx {
+    color: #00ff00;
+}
+
+.bytes-terminal-tx {
+    color: #569cd6;
+    text-shadow: 0 0 2px rgba(86, 156, 214, 0.3);
+}
 }

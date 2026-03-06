@@ -118,6 +118,8 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
                 let pin_source = entry_source.clone();
                 let pin_attr = entry_attribute.clone();
                 let pin_dtype = entry_data_type.clone();
+                let is_bytes_rxtx = pin_dtype == "bytes"
+                    && (pin_attr == "RX" || pin_attr == "TX");
                 rsx! {
                     div {
                         class: "context-menu-backdrop",
@@ -126,20 +128,24 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
                     div {
                         class: "context-menu",
                         style: "left: {x}px; top: {y}px;",
+                        // Standard single-attribute pin
                         div {
                             class: "context-menu-item",
                             onclick: move |_| {
                                 let already = state.lens_pins.read().iter().any(|p| {
-                                    p.matches(&pin_source, &pin_attr)
+                                    p.matches(&pin_source, &pin_attr) && p.paired_attribute.is_none()
                                 });
                                 if !already {
-                                    // Backfill with existing log history
+                                    let is_bytes = pin_dtype == "bytes";
                                     let historical: Vec<_> = state
                                         .logs
                                         .read()
                                         .iter()
                                         .filter(|e| e.source == pin_source && e.attribute == pin_attr)
-                                        .map(|e| (e.timestamp.clone(), e.decoded_value.clone()))
+                                        .map(|e| {
+                                            let rb = if is_bytes { Some(e.data_bytes.clone()) } else { None };
+                                            (e.timestamp.clone(), e.decoded_value.clone(), rb)
+                                        })
                                         .collect();
                                     let mut pin = LensPinData::new(
                                         pin_source.clone(),
@@ -147,14 +153,77 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
                                         pin_dtype.clone(),
                                     );
                                     let skip = historical.len().saturating_sub(crate::models::lens_pin::MAX_PIN_VALUES);
-                                    for (ts, raw) in historical.into_iter().skip(skip) {
-                                        pin.values.push_back(crate::models::lens_pin::PinnedValue { timestamp: ts, raw });
+                                    for (ts, raw, rb) in historical.into_iter().skip(skip) {
+                                        pin.values.push_back(crate::models::lens_pin::PinnedValue {
+                                            timestamp: ts,
+                                            raw,
+                                            raw_bytes: rb,
+                                            value_attribute: None,
+                                        });
                                     }
                                     state.lens_pins.write().push(pin);
                                 }
                                 ctx_menu.set(None);
                             },
                             "📌 Épingler « {entry_attribute} » de « {entry_source} »"
+                        }
+                        // Combined RX+TX pin (only for bytes with RX/TX attribute)
+                        if is_bytes_rxtx {
+                            {
+                                let comb_source = pin_source.clone();
+                                let comb_dtype = pin_dtype.clone();
+                                rsx! {
+                                    div {
+                                        class: "context-menu-item",
+                                        onclick: move |_| {
+                                            // Dedup: check if a combined pin already exists for this source
+                                            let already = state.lens_pins.read().iter().any(|p| {
+                                                p.source == comb_source
+                                                    && p.attribute == "RX"
+                                                    && p.paired_attribute.as_deref() == Some("TX")
+                                            });
+                                            if !already {
+                                                let historical: Vec<_> = state
+                                                    .logs
+                                                    .read()
+                                                    .iter()
+                                                    .filter(|e| {
+                                                        e.source == comb_source
+                                                            && (e.attribute == "RX" || e.attribute == "TX")
+                                                            && e.data_type == "bytes"
+                                                    })
+                                                    .map(|e| {
+                                                        (
+                                                            e.timestamp.clone(),
+                                                            e.decoded_value.clone(),
+                                                            Some(e.data_bytes.clone()),
+                                                            Some(e.attribute.clone()),
+                                                        )
+                                                    })
+                                                    .collect();
+                                                let mut pin = LensPinData::new_paired(
+                                                    comb_source.clone(),
+                                                    "RX".to_string(),
+                                                    "TX".to_string(),
+                                                    comb_dtype.clone(),
+                                                );
+                                                let skip = historical.len().saturating_sub(crate::models::lens_pin::MAX_PIN_VALUES);
+                                                for (ts, raw, rb, attr) in historical.into_iter().skip(skip) {
+                                                    pin.values.push_back(crate::models::lens_pin::PinnedValue {
+                                                        timestamp: ts,
+                                                        raw,
+                                                        raw_bytes: rb,
+                                                        value_attribute: attr,
+                                                    });
+                                                }
+                                                state.lens_pins.write().push(pin);
+                                            }
+                                            ctx_menu.set(None);
+                                        },
+                                        "📌 Épingler « RX + TX » de « {pin_source} »"
+                                    }
+                                }
+                            }
                         }
                     }
                 }

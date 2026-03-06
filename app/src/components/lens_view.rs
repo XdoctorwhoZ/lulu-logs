@@ -66,13 +66,20 @@ fn LensWidget(pin: LensPinData, index: usize) -> Element {
     let relative_time = last_value.map(|v| format_relative_time(&v.timestamp)).unwrap_or_default();
     let last_raw = last_value.map(|v| v.raw.as_str()).unwrap_or("—");
 
+    // Header attribute display: show "RX + TX" for combined pins
+    let attr_display = if let Some(ref paired) = pin.paired_attribute {
+        format!("{} + {}", pin.attribute, paired)
+    } else {
+        pin.attribute.clone()
+    };
+
     rsx! {
         div { class: "lens-widget",
             // Header
             div { class: "lens-widget-header",
                 span { class: "lens-widget-source", "{pin.source}" }
                 span { class: "lens-widget-sep", " / " }
-                span { class: "lens-widget-attr", "{pin.attribute}" }
+                span { class: "lens-widget-attr", "{attr_display}" }
                 button {
                     class: "lens-widget-close",
                     onclick: move |_| {
@@ -87,6 +94,7 @@ fn LensWidget(pin: LensPinData, index: usize) -> Element {
                     "float32" | "float64" | "int32" | "int64" => rsx! { SparklineWidget { pin: pin.clone() } },
                     "bool" => rsx! { BoolTimelineWidget { pin: pin.clone() } },
                     "string" | "json" => rsx! { TextHistoryWidget { pin: pin.clone() } },
+                    "bytes" => rsx! { BytesTerminalWidget { pin: pin.clone() } },
                     _ => rsx! { PlaceholderWidget { pin: pin.clone() } },
                 }}
             }
@@ -194,6 +202,92 @@ fn TextHistoryWidget(pin: LensPinData) -> Element {
             }
         }
     }
+}
+
+/// Bytes terminal — displays byte data as ASCII serial terminal output.
+/// Supports RX/TX color coding for combined pins.
+#[component]
+fn BytesTerminalWidget(pin: LensPinData) -> Element {
+    if pin.values.is_empty() {
+        return rsx! { div { class: "lens-widget-placeholder", "En attente de données…" } };
+    }
+
+    let is_combined = pin.paired_attribute.is_some();
+
+    // Build terminal chunks: each value becomes a (css_class, processed_text) pair
+    let chunks: Vec<(String, String)> = pin
+        .values
+        .iter()
+        .filter_map(|val| {
+            let bytes = val.raw_bytes.as_ref()?;
+            let text = String::from_utf8_lossy(bytes);
+            let processed = process_terminal_output(&text);
+            if processed.is_empty() {
+                return None;
+            }
+            let css = if is_combined {
+                match val.value_attribute.as_deref() {
+                    Some("TX") => "bytes-terminal-chunk bytes-terminal-tx".to_string(),
+                    _ => "bytes-terminal-chunk bytes-terminal-rx".to_string(),
+                }
+            } else {
+                "bytes-terminal-chunk".to_string()
+            };
+            Some((css, processed))
+        })
+        .collect();
+
+    rsx! {
+        div { class: "bytes-terminal",
+            div {
+                class: "bytes-terminal-output",
+                onmounted: move |evt: Event<MountedData>| {
+                    // Auto-scroll to bottom on mount
+                    let el = evt.data();
+                    spawn(async move {
+                        let _ = el.scroll_to(ScrollBehavior::Instant).await;
+                    });
+                },
+                for (css , text) in chunks.iter() {
+                    span { class: "{css}", "{text}" }
+                }
+            }
+        }
+    }
+}
+
+/// Processes terminal output to handle escape sequences and control characters.
+fn process_terminal_output(output: &str) -> String {
+    let mut result = String::new();
+    let mut chars = output.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            // Newline characters
+            '\n' => result.push('\n'),
+            '\r' => {
+                // Handle carriage return — typically combined with \n
+                if chars.peek() == Some(&'\n') {
+                    chars.next(); // consume the \n
+                }
+                result.push('\n');
+            }
+            // Control characters (handle specially)
+            '\x07' => {}, // BEL — omit
+            '\x03' => {}, // Ctrl+C — omit
+            '\x08' => { result.pop(); } // Backspace — erase last char
+            '\x7f' => { result.pop(); } // DEL — erase last char
+            _ => {
+                // Skip other non-printable control characters (< 0x20, except tab)
+                if (ch as u32) >= 0x20 || ch == '\t' {
+                    result.push(ch);
+                }
+                // Silently skip other control chars
+            }
+        }
+    }
+
+    result
 }
 
 /// Placeholder for unsupported data types.

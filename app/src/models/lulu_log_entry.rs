@@ -107,6 +107,9 @@ pub struct LuluLogEntry {
     /// Decoded value ready for display (cf. lulu-logs spec § 3.3).
     pub decoded_value: String,
 
+    /// Raw data bytes extracted from the FlatBuffers payload (pre-interpretation).
+    pub data_bytes: Vec<u8>,
+
     /// Raw FlatBuffers payload (kept for export).
     pub raw_payload: Vec<u8>,
 }
