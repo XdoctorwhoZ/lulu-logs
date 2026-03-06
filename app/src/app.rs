@@ -5,10 +5,26 @@ use dioxus::prelude::*;
 use flatbuffers;
 use rumqttc::{Event, Packet};
 
-use crate::components::{log_list::LogList, status_bar::StatusBar, toolbar::Toolbar};
+use crate::components::{log_list::LogList, sidebar::Sidebar, status_bar::StatusBar};
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
-use crate::models::{decode_data, LuluLevel, LuluLogEntry, PulseSourceEntry, TestScenario, ScenarioStatus};
+use crate::models::{
+    decode_data, LuluLevel, LuluLogEntry, PulseSourceEntry, ScenarioStatus, TestScenario,
+};
 use crate::mqtt::PzaMqttClient;
+
+// ---------------------------------------------------------------------------
+// Sidebar panel selection
+// ---------------------------------------------------------------------------
+
+/// Identifies which panel is displayed in the side panel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ActivePanel {
+    Sources,
+    Attributes,
+    Scenarios,
+    Pulse,
+    Controls,
+}
 
 // ---------------------------------------------------------------------------
 // AppState
@@ -64,6 +80,10 @@ pub struct AppState {
     pub pulse_sources: Signal<HashMap<String, PulseSourceEntry>>,
     /// Incremented every second by a background ticker to trigger pulse re-renders.
     pub pulse_tick: Signal<u64>,
+
+    // --- Sidebar ---
+    /// Currently active side panel (None = side panel closed).
+    pub active_panel: Signal<Option<ActivePanel>>,
 }
 
 impl AppState {
@@ -85,6 +105,7 @@ impl AppState {
             selected_scenario: Signal::new(None),
             pulse_sources: Signal::new(HashMap::new()),
             pulse_tick: Signal::new(0u64),
+            active_panel: Signal::new(Some(ActivePanel::Sources)),
         }
     }
 }
@@ -102,7 +123,10 @@ pub fn is_entry_visible(entry: &LuluLogEntry, state: &AppState, log_index: usize
     // 3. Source text filter
     let src_filter = state.source_filter_text.read();
     if !src_filter.is_empty()
-        && !entry.source.to_lowercase().contains(&src_filter.to_lowercase())
+        && !entry
+            .source
+            .to_lowercase()
+            .contains(&src_filter.to_lowercase())
     {
         return false;
     }
@@ -119,7 +143,10 @@ pub fn is_entry_visible(entry: &LuluLogEntry, state: &AppState, log_index: usize
     // 5. Scenario filter — if a scenario is selected, only show logs within its bounds
     if let Some((ref sel_name, ref sel_source)) = *state.selected_scenario.read() {
         let scenarios = state.scenarios.read();
-        if let Some(sc) = scenarios.iter().find(|s| &s.name == sel_name && &s.source == sel_source) {
+        if let Some(sc) = scenarios
+            .iter()
+            .find(|s| &s.name == sel_name && &s.source == sel_source)
+        {
             if !sc.contains_log_index(log_index) {
                 return false;
             }
@@ -182,7 +209,9 @@ pub fn export_logs(state: &AppState) {
     builder.finish(export_file, None);
     let bytes = builder.finished_data();
 
-    let filename = chrono::Local::now().format("export_%Y%m%d_%H%M%S.lulu").to_string();
+    let filename = chrono::Local::now()
+        .format("export_%Y%m%d_%H%M%S.lulu")
+        .to_string();
     let path = match std::env::current_dir() {
         Ok(dir) => dir.join(&filename),
         Err(e) => {
@@ -193,11 +222,7 @@ pub fn export_logs(state: &AppState) {
 
     match std::fs::write(&path, bytes) {
         Ok(()) => {
-            tracing::info!(
-                "Exported {} logs to {}",
-                visible_logs.len(),
-                path.display()
-            );
+            tracing::info!("Exported {} logs to {}", visible_logs.len(), path.display());
         }
         Err(e) => {
             tracing::error!("export: failed to write {}: {}", path.display(), e);
@@ -234,8 +259,10 @@ pub fn App() -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("assets/style.css") }
         div { class: "app-container",
-            Toolbar {}
-            LogList {}
+            div { class: "app-body",
+                Sidebar {}
+                LogList {}
+            }
             StatusBar {}
         }
     }
@@ -278,14 +305,25 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                     let json_val = serde_json::from_slice::<serde_json::Value>(&payload_bytes).ok();
                     let ts = json_val
                         .as_ref()
-                        .and_then(|v| v.get("timestamp").and_then(|t| t.as_str()).map(str::to_string))
+                        .and_then(|v| {
+                            v.get("timestamp")
+                                .and_then(|t| t.as_str())
+                                .map(str::to_string)
+                        })
                         .unwrap_or_default();
-                    let version = json_val
-                        .as_ref()
-                        .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(str::to_string));
+                    let version = json_val.as_ref().and_then(|v| {
+                        v.get("version")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    });
                     state.pulse_sources.write().insert(
                         source.clone(),
-                        PulseSourceEntry { source, last_seen_ts: ts, last_seen_at: Instant::now(), version },
+                        PulseSourceEntry {
+                            source,
+                            last_seen_ts: ts,
+                            last_seen_at: Instant::now(),
+                            version,
+                        },
                     );
                     continue;
                 }
@@ -293,10 +331,7 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                 // --- lulu/{source}/{attribute} log messages ---
                 // Validate topic (must have at least 3 segments: lulu + source + attr)
                 if segments.len() < 3 || segments[0] != "lulu" {
-                    tracing::warn!(
-                        "Topic invalide (< 3 niveaux) : {} — ignoré",
-                        topic
-                    );
+                    tracing::warn!("Topic invalide (< 3 niveaux) : {} — ignoré", topic);
                     continue;
                 }
 
@@ -386,8 +421,15 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                                 });
                             } else {
                                 // end_test_scenario — find matching open scenario
-                                let success = json_val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                                let error_msg = json_val.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let success = json_val
+                                    .get("success")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let error_msg = json_val
+                                    .get("error")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
 
                                 let mut scenarios = state.scenarios.write();
                                 if let Some(sc) = scenarios.iter_mut().rev().find(|s| {

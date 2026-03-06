@@ -1,4 +1,4 @@
-pub mod toolbar;
+pub mod sidebar;
 pub mod log_list;
 pub mod log_item;
 pub mod status_bar;
