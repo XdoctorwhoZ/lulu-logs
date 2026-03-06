@@ -1,4 +1,8 @@
 use dioxus::prelude::*;
+use dioxus_free_icons::icons::bs_icons::{
+    BsCheck2Square, BsFolder, BsGear, BsHeartPulse, BsTags,
+};
+use dioxus_free_icons::Icon;
 
 use crate::app::{export_logs, ActivePanel, AppState};
 use crate::components::pulse_panel::PulsePanel;
@@ -53,34 +57,34 @@ fn ActivityBar() -> Element {
     rsx! {
         div { class: "activity-bar",
             ActivityIcon {
+                panel: ActivePanel::Pulse,
+                badge: online_count,
+                active: active,
+                Icon { icon: BsHeartPulse, width: 20, height: 20 }
+            }
+            ActivityIcon {
                 panel: ActivePanel::Sources,
-                icon: "🗂",
                 badge: sources_count,
                 active: active,
+                Icon { icon: BsFolder, width: 20, height: 20 }
             }
             ActivityIcon {
                 panel: ActivePanel::Attributes,
-                icon: "🏷",
                 badge: attrs_count,
                 active: active,
+                Icon { icon: BsTags, width: 20, height: 20 }
             }
             ActivityIcon {
                 panel: ActivePanel::Scenarios,
-                icon: "☑",
                 badge: if pending_count > 0 { pending_count } else { scenarios_total },
                 active: active,
-            }
-            ActivityIcon {
-                panel: ActivePanel::Pulse,
-                icon: "💓",
-                badge: online_count,
-                active: active,
+                Icon { icon: BsCheck2Square, width: 20, height: 20 }
             }
             ActivityIcon {
                 panel: ActivePanel::Controls,
-                icon: "⚙",
                 badge: 0,
                 active: active,
+                Icon { icon: BsGear, width: 20, height: 20 }
             }
         }
     }
@@ -90,9 +94,9 @@ fn ActivityBar() -> Element {
 #[component]
 fn ActivityIcon(
     panel: ActivePanel,
-    icon: &'static str,
     badge: usize,
     active: Option<ActivePanel>,
+    children: Element,
 ) -> Element {
     let mut state = use_context::<AppState>();
     let is_active = active == Some(panel);
@@ -113,7 +117,7 @@ fn ActivityIcon(
                     state.active_panel.set(Some(panel));
                 }
             },
-            span { class: "activity-icon-symbol", "{icon}" }
+            span { class: "activity-icon-symbol", {children} }
             if badge > 0 {
                 span { class: "activity-icon-badge", "{badge}" }
             }

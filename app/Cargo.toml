@@ -10,6 +10,7 @@ bytes = "1.11.0"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.15.17"
 dioxus = { version = "0.7.3", features = ["desktop"] }
+dioxus-free-icons = { version = "0.10.0", features = ["bootstrap"] }
 flatbuffers = "24.3.25"
 rand = "0.8.5"
 rumqttc = "0.25.0"

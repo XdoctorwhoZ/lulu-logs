@@ -10,15 +10,17 @@ Barre étroite fixe (48 px) à l'extrême gauche de l'application. Elle contient
 
 Chaque icône peut afficher un **badge** numérique (petit cercle en haut à droite) indiquant un compteur dynamique. Le badge est masqué lorsque la valeur est 0.
 
+Les icônes sont fournies par la crate [`dioxus-free-icons`](https://crates.io/crates/dioxus-free-icons).
+
 #### Entrées
 
-| # | Nom        | Icône | Badge                             |
-|---|------------|-------|-----------------------------------|
-| 1 | Sources    | 🗂    | Nombre de sources connues         |
-| 2 | Attributs  | 🏷    | Nombre d'attributs connus         |
-| 3 | Scénarios  | ☑     | Nombre de scénarios pending (ou total si aucun pending) |
-| 4 | Pulse      | 💓    | Nombre de sources online          |
-| 5 | Contrôles  | ⚙     | Aucun                             |
+| # | Nom        | Icône (source / nom)              | Badge                             |
+|---|------------|-----------------------------------|-----------------------------------|
+| 1 | Pulse      | Bootstrap / `heart-pulse`         | Nombre de sources online          |
+| 2 | Sources    | Bootstrap / `folder`              | Nombre de sources connues         |
+| 3 | Attributs  | Bootstrap / `tags`                | Nombre d'attributs connus         |
+| 4 | Scénarios  | Bootstrap / `check2-square`       | Nombre de scénarios pending (ou total si aucun pending) |
+| 5 | Contrôles  | Bootstrap / `gear`                | Aucun                             |
 
 ### 1.2 Side Panel
 
@@ -52,10 +54,10 @@ Le Side Panel affiche en en-tête le nom de la section active (ex. « SOURCES »
 │   Bar    │ (260 px)   │    (flex-grow)            │
 │ (48 px)  │            │                           │
 │          │            │                           │
-│  [🗂] 12 │ Sources    │    log entries…           │
-│  [🏷] 5  │ ☐ src1     │                           │
-│  [☑] 3   │ ☐ src2     │                           │
-│  [💓] 2  │ …          │                           │
+│  [�] 2  │ Pulse      │    log entries…           │
+│  [🗂] 12 │ ☐ src1     │                           │
+│  [🏷] 5  │ ☐ src2     │                           │
+│  [☑] 3   │ …          │                           │
 │  [⚙]    │            │                           │
 ├──────────┴────────────┴───────────────────────────┤
 │                     StatusBar                     │
