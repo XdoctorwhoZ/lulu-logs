@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use bytes::Bytes;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
@@ -69,6 +71,10 @@ pub(crate) struct LuluClient {
     messages_dropped: Arc<AtomicU64>,
     reconnections: Arc<AtomicU32>,
     connected: Arc<AtomicBool>,
+    /// Cloned MQTT client used to publish heartbeat pulses.
+    pub(crate) mqtt_client: AsyncClient,
+    /// Active pulse tasks keyed by source string (e.g. `"psu/channel-1"`).
+    pulse_handles: Mutex<HashMap<String, tokio::task::AbortHandle>>,
 }
 
 impl LuluClient {
@@ -94,7 +100,7 @@ impl LuluClient {
 
         tokio::spawn(send_loop(
             receiver,
-            async_client,
+            async_client.clone(),
             Arc::clone(&messages_published),
             Arc::clone(&messages_dropped),
         ));
@@ -111,6 +117,8 @@ impl LuluClient {
             messages_dropped,
             reconnections,
             connected,
+            mqtt_client: async_client,
+            pulse_handles: Mutex::new(HashMap::new()),
         })
     }
 
@@ -137,6 +145,58 @@ impl LuluClient {
     /// Returns whether the MQTT connection is currently alive.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+
+    /// Spawns a background task that publishes a heartbeat on `pulse_topic` every 2 seconds.
+    /// The first pulse is emitted immediately (before the first 2-second wait).
+    /// Calling again with the same `source` replaces the existing task.
+    pub fn start_pulse(
+        &self,
+        source: String,
+        pulse_topic: String,
+        version: Option<String>,
+        rt: &tokio::runtime::Runtime,
+    ) {
+        let mqtt = self.mqtt_client.clone();
+        let handle = rt.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                interval.tick().await;
+                let ts = chrono::Utc::now()
+                    .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    .to_string();
+                let payload = match &version {
+                    Some(v) => serde_json::json!({"timestamp": ts, "version": v}).to_string(),
+                    None    => serde_json::json!({"timestamp": ts}).to_string(),
+                };
+                if let Err(e) = mqtt
+                    .publish(&pulse_topic, QoS::AtMostOnce, false, payload.into_bytes())
+                    .await
+                {
+                    tracing::warn!("pulse publish failed for {}: {}", pulse_topic, e);
+                }
+            }
+        });
+        // Replace any existing handle for this source (aborting the old task)
+        if let Some(old) = self.pulse_handles.lock().unwrap().insert(source, handle.abort_handle()) {
+            old.abort();
+        }
+    }
+
+    /// Stops the heartbeat task for the given source. No-op if none is running.
+    pub fn stop_pulse(&self, source: &str) {
+        if let Some(handle) = self.pulse_handles.lock().unwrap().remove(source) {
+            handle.abort();
+        }
+    }
+
+    /// Stops all active heartbeat tasks.
+    pub fn stop_all_pulses(&self) {
+        let mut handles = self.pulse_handles.lock().unwrap();
+        for (_, handle) in handles.drain() {
+            handle.abort();
+        }
     }
 }
 

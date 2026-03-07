@@ -1,9 +1,9 @@
 use crate::error::LuluError;
 
 /// Valide un segment de topic unique.
-/// Règles : non vide, contient uniquement [a-z0-9-].
+/// Règles : non vide, contient uniquement [a-zA-Z0-9_-].
 fn validate_segment(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
 /// Fractionne source sur '/', valide chaque segment.
@@ -30,9 +30,15 @@ pub fn validate_attribute(attribute: &str) -> Result<(), LuluError> {
 }
 
 /// Construit le topic MQTT complet.
-/// Format : `"lulu/{segment_1}/.../{ segment_n}/{attribute}"`
+/// Format : `"lulu/{segment_1}/.../{segment_n}/{attribute}"`
 pub fn build_topic(source_segments: &[String], attribute: &str) -> String {
     format!("lulu/{}/{}", source_segments.join("/"), attribute)
+}
+
+/// Construit le topic MQTT heartbeat.
+/// Format : `"lulu-pulse/{segment_1}/.../{segment_n}"`
+pub fn build_pulse_topic(source_segments: &[String]) -> String {
+    format!("lulu-pulse/{}", source_segments.join("/"))
 }
 
 #[cfg(test)]
@@ -53,8 +59,13 @@ mod tests {
 
     #[test]
     fn test_parse_source_invalid_segment() {
-        assert!(parse_source("My-Service").is_err()); // uppercase
         assert!(parse_source("a/b/").is_err()); // trailing slash → empty segment
+    }
+
+    #[test]
+    fn test_parse_source_with_uppercase() {
+        let segs = parse_source("My-Service").unwrap();
+        assert_eq!(segs, vec!["My-Service"]);
     }
 
     #[test]
@@ -73,5 +84,13 @@ mod tests {
     fn test_build_topic() {
         let segs = vec!["psu".to_string(), "power-supply".to_string()];
         assert_eq!(build_topic(&segs, "voltage"), "lulu/psu/power-supply/voltage");
+    }
+
+    #[test]
+    fn test_build_pulse_topic() {
+        let segs = vec!["psu".to_string(), "power-supply".to_string(), "channel-1".to_string()];
+        assert_eq!(build_pulse_topic(&segs), "lulu-pulse/psu/power-supply/channel-1");
+        let single = vec!["my-service".to_string()];
+        assert_eq!(build_pulse_topic(&single), "lulu-pulse/my-service");
     }
 }

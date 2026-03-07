@@ -1,0 +1,9 @@
+{
+    "editor.formatOnSave": true,
+    "chat.tools.terminal.autoApprove": {
+        "/^cargo search dioxus-free-icons 2>/dev/null \\| head -5$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
+}

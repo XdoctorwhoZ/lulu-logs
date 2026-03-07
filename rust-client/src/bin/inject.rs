@@ -19,9 +19,8 @@
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_is_connected, lulu_publish, lulu_shutdown, lulu_stats,
-    lulu_beg_test_scenario, lulu_end_test_scenario,
-    Data, LuluClientConfig, LogLevel,
+    lulu_beg_test_scenario, lulu_end_test_scenario, lulu_init, lulu_is_connected, lulu_publish,
+    lulu_shutdown, lulu_start_pulse, lulu_stats, lulu_stop_pulse, Data, LogLevel, LuluClientConfig,
 };
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
@@ -34,10 +33,7 @@ struct Args {
 fn parse_args() -> Args {
     let mut iter = std::env::args().skip(1);
     let broker_host = iter.next().unwrap_or_else(|| "127.0.0.1".to_string());
-    let broker_port = iter
-        .next()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(1883u16);
+    let broker_port = iter.next().and_then(|p| p.parse().ok()).unwrap_or(1883u16);
     Args {
         broker_host,
         broker_port,
@@ -418,6 +414,147 @@ fn build_scenarios() -> Vec<Scenario> {
             ),
             description: "Test session summary",
         },
+        // ── Serial terminal (u-boot) ──────────────────────────────────────────
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"U-Boot 2023.07 (Jan 01 2024 - 12:00:00 +0000)\r\n".to_vec()),
+            description: "U-Boot banner received",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"SoC: AM335x\r\n".to_vec()),
+            description: "SoC identification",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"Model: Beaglebone Black\r\n".to_vec()),
+            description: "Device model",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"DRAM: 512 MiB\r\n".to_vec()),
+            description: "DRAM size",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"Loading Environment from MMC...\r\n".to_vec()),
+            description: "Environment loading",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "TX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"env\r\n".to_vec()),
+            description: "User command: env",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"baudrate=115200\r\n".to_vec()),
+            description: "Environment variable (baudrate)",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"bootargs=console=ttyO0,115200n8 root=/dev/mmcblk0p2 rw\r\n".to_vec()),
+            description: "Environment variable (bootargs)",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "TX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"printenv ethaddr\r\n".to_vec()),
+            description: "User command: printenv ethaddr",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"ethaddr=d8:3d:c8:XX:XX:XX\r\n".to_vec()),
+            description: "MAC address response",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "TX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"boot\r\n".to_vec()),
+            description: "User command: boot",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"MMC: Waiting for init complete...\r\n".to_vec()),
+            description: "MMC initialization",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"Loading Image from MMC...\r\n".to_vec()),
+            description: "Kernel image loading",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"Booting Linux...\r\n".to_vec()),
+            description: "Linux kernel boot",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"Linux version 5.10.0-1017-beagle (build@workstation) (gcc-10, GNU ld (GNU Binutils) 2.36.1)\r\n".to_vec()),
+            description: "Linux kernel version",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Bytes(b"Welcome to Embedded Linux\n\x07".to_vec()),
+            description: "System boot complete",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Trace,
+            data: Data::Bytes(b"root@beaglebone:~# ".to_vec()),
+            description: "Serial prompt displayed",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "TX",
+            level: LogLevel::Debug,
+            data: Data::Bytes([0x03].to_vec()),  // Ctrl+C
+            description: "User sends Ctrl+C",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Debug,
+            data: Data::Bytes(b"^C\r\n".to_vec()),
+            description: "Echo of Ctrl+C received",
+        },
+        Scenario {
+            source: "serial",
+            attribute: "RX",
+            level: LogLevel::Info,
+            data: Data::Json(r#"{"timestamp":"2024-01-01T12:00:45.123Z","bytes":256,"errors":0,"baudrate":115200}"#.to_string()),
+            description: "RX statistics",
+        },
     ]
 }
 
@@ -433,16 +570,16 @@ fn inject_test_scenarios() {
 
     print_scenario_step("BEG", source, attr, name);
     let _ = lulu_beg_test_scenario(source, attr, name);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     // Some normal logs in between (these belong to the scenario)
     let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.30));
     println!("      ↳ psu/channel-1/voltage = 3.30 (float32)");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.31));
     println!("      ↳ psu/channel-1/voltage = 3.31 (float32)");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     print_scenario_step("END", source, attr, &format!("{} → SUCCESS", name));
     let _ = lulu_end_test_scenario(source, attr, name, true, None);
@@ -453,19 +590,19 @@ fn inject_test_scenarios() {
 
     print_scenario_step("BEG", source, attr, name2);
     let _ = lulu_beg_test_scenario(source, attr, name2);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(source, "current", LogLevel::Info, Data::Float32(0.45));
     println!("      ↳ psu/channel-1/current = 0.45 (float32)");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(source, "current", LogLevel::Warn, Data::Float32(0.98));
     println!("      ↳ psu/channel-1/current = 0.98 (float32) [warn]");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(source, "current", LogLevel::Error, Data::Float32(1.05));
     println!("      ↳ psu/channel-1/current = 1.05 (float32) [error]");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     print_scenario_step("END", source, attr, &format!("{} → FAIL", name2));
     let _ = lulu_end_test_scenario(
@@ -483,11 +620,16 @@ fn inject_test_scenarios() {
 
     print_scenario_step("BEG", source3, attr, name3);
     let _ = lulu_beg_test_scenario(source3, attr, name3);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
-    let _ = lulu_publish(source3, "frequency", LogLevel::Info, Data::Float64(1_000_000.0));
+    let _ = lulu_publish(
+        source3,
+        "frequency",
+        LogLevel::Info,
+        Data::Float64(1_000_000.0),
+    );
     println!("      ↳ oscilloscope/probe-a/frequency = 1MHz (float64)");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(10));
 
     println!("      ↳ (scenario left open — in progress)");
     println!("────────────────────────────────────────────────────────");
@@ -580,7 +722,7 @@ fn main() {
         }
 
         // Pace the injection so the UI renders messages progressively.
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     println!();
@@ -590,6 +732,30 @@ fn main() {
     // Uses lulu_beg_test_scenario() / lulu_end_test_scenario() convenience
     // helpers to demonstrate the lulu-logs v1.1.0 §3.4 test scenario types.
     inject_test_scenarios();
+
+    println!();
+
+    // ── Step 2c: heartbeat demo (lulu-logs v1.2.0 §7) ─────────────────────────
+    //
+    // lulu_start_pulse() spawns a background task that publishes a JSON payload
+    // to `lulu-pulse/{source}` every 2 seconds. The first pulse is immediate.
+    // Each registered source appears as a live "online" indicator in the UI.
+    //
+    // Here we register three sources, let them pulse for 6 seconds, then stop
+    // two of them so the UI transitions those to "offline".
+    println!("[pulse] starting heartbeats for 3 sources…");
+    lulu_start_pulse("psu/channel-1", Some("1.0.0")).ok();
+    lulu_start_pulse("psu/channel-2", Some("1.0.0")).ok();
+    lulu_start_pulse("mcp/filesystem", None).ok();
+
+    // Wait long enough for multiple pulse cycles to be observed by the viewer.
+    std::thread::sleep(Duration::from_secs(6));
+
+    // Stop two sources so the viewer shows them as offline after 6 s.
+    println!("[pulse] stopping psu/channel-2 and mcp/filesystem");
+    lulu_stop_pulse("psu/channel-2");
+    lulu_stop_pulse("mcp/filesystem");
+    // psu/channel-1 keeps pulsing until lulu_shutdown() cleans up all handles.
 
     println!();
 

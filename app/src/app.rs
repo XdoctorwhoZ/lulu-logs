@@ -1,13 +1,33 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use dioxus::prelude::*;
 use flatbuffers;
 use rumqttc::{Event, Packet};
 
-use crate::components::{log_list::LogList, status_bar::StatusBar, toolbar::Toolbar};
+use crate::components::{
+    lens_view::LensView, log_list::LogList, sidebar::Sidebar, status_bar::StatusBar,
+};
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
-use crate::models::{decode_data, LuluLevel, LuluLogEntry, TestScenario, ScenarioStatus};
+use crate::models::{
+    decode_data, ActiveView, LensLayout, LensPinData, LuluLevel, LuluLogEntry, PulseSourceEntry,
+    ScenarioStatus, TestScenario,
+};
 use crate::mqtt::PzaMqttClient;
+
+// ---------------------------------------------------------------------------
+// Sidebar panel selection
+// ---------------------------------------------------------------------------
+
+/// Identifies which panel is displayed in the side panel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ActivePanel {
+    Sources,
+    Attributes,
+    Scenarios,
+    Pulse,
+    Controls,
+}
 
 // ---------------------------------------------------------------------------
 // AppState
@@ -57,6 +77,24 @@ pub struct AppState {
     pub scenarios: Signal<Vec<TestScenario>>,
     /// When set, only show logs belonging to this scenario (by name+source).
     pub selected_scenario: Signal<Option<(String, String)>>,
+
+    // --- Heartbeats (lulu-logs v1.2.0 §7) ---
+    /// Live source entries keyed by source string, updated on each pulse.
+    pub pulse_sources: Signal<HashMap<String, PulseSourceEntry>>,
+    /// Incremented every second by a background ticker to trigger pulse re-renders.
+    pub pulse_tick: Signal<u64>,
+
+    // --- Sidebar ---
+    /// Currently active side panel (None = side panel closed).
+    pub active_panel: Signal<Option<ActivePanel>>,
+
+    // --- Lens ---
+    /// Which view is active in the main area (LogList or Lens).
+    pub active_view: Signal<ActiveView>,
+    /// Pinned (source, attribute) widgets in the Lens.
+    pub lens_pins: Signal<Vec<LensPinData>>,
+    /// Current layout preset for Lens widgets.
+    pub lens_layout: Signal<LensLayout>,
 }
 
 impl AppState {
@@ -76,6 +114,12 @@ impl AppState {
             total_received: Signal::new(0),
             scenarios: Signal::new(Vec::new()),
             selected_scenario: Signal::new(None),
+            pulse_sources: Signal::new(HashMap::new()),
+            pulse_tick: Signal::new(0u64),
+            active_panel: Signal::new(Some(ActivePanel::Sources)),
+            active_view: Signal::new(ActiveView::LogList),
+            lens_pins: Signal::new(Vec::new()),
+            lens_layout: Signal::new(LensLayout::Mosaic),
         }
     }
 }
@@ -93,7 +137,10 @@ pub fn is_entry_visible(entry: &LuluLogEntry, state: &AppState, log_index: usize
     // 3. Source text filter
     let src_filter = state.source_filter_text.read();
     if !src_filter.is_empty()
-        && !entry.source.to_lowercase().contains(&src_filter.to_lowercase())
+        && !entry
+            .source
+            .to_lowercase()
+            .contains(&src_filter.to_lowercase())
     {
         return false;
     }
@@ -110,7 +157,10 @@ pub fn is_entry_visible(entry: &LuluLogEntry, state: &AppState, log_index: usize
     // 5. Scenario filter — if a scenario is selected, only show logs within its bounds
     if let Some((ref sel_name, ref sel_source)) = *state.selected_scenario.read() {
         let scenarios = state.scenarios.read();
-        if let Some(sc) = scenarios.iter().find(|s| &s.name == sel_name && &s.source == sel_source) {
+        if let Some(sc) = scenarios
+            .iter()
+            .find(|s| &s.name == sel_name && &s.source == sel_source)
+        {
             if !sc.contains_log_index(log_index) {
                 return false;
             }
@@ -173,7 +223,9 @@ pub fn export_logs(state: &AppState) {
     builder.finish(export_file, None);
     let bytes = builder.finished_data();
 
-    let filename = chrono::Local::now().format("export_%Y%m%d_%H%M%S.lulu").to_string();
+    let filename = chrono::Local::now()
+        .format("export_%Y%m%d_%H%M%S.lulu")
+        .to_string();
     let path = match std::env::current_dir() {
         Ok(dir) => dir.join(&filename),
         Err(e) => {
@@ -184,11 +236,7 @@ pub fn export_logs(state: &AppState) {
 
     match std::fs::write(&path, bytes) {
         Ok(()) => {
-            tracing::info!(
-                "Exported {} logs to {}",
-                visible_logs.len(),
-                path.display()
-            );
+            tracing::info!("Exported {} logs to {}", visible_logs.len(), path.display());
         }
         Err(e) => {
             tracing::error!("export: failed to write {}: {}", path.display(), e);
@@ -211,12 +259,53 @@ pub fn App() -> Element {
     // Spawn the MQTT listener once
     let _mqtt_resource = use_resource(move || spawn_mqtt_listener(state));
 
+    // Tick every second to drive online/offline transitions in PulsePanel
+    let _pulse_ticker = use_resource(move || {
+        let mut s = state;
+        async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                *s.pulse_tick.write() += 1;
+            }
+        }
+    });
+
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("assets/style.css") }
         div { class: "app-container",
-            Toolbar {}
-            LogList {}
+            div { class: "app-body",
+                Sidebar {}
+                div { class: "main-area",
+                    ViewSwitcher {}
+                    match *state.active_view.read() {
+                        ActiveView::LogList => rsx! { LogList {} },
+                        ActiveView::Lens => rsx! { LensView {} },
+                    }
+                }
+            }
             StatusBar {}
+        }
+    }
+}
+
+/// Tabs to switch between LogList and Lens.
+#[component]
+fn ViewSwitcher() -> Element {
+    let mut state = use_context::<AppState>();
+    let active = *state.active_view.read();
+
+    rsx! {
+        div { class: "view-switcher",
+            button {
+                class: if active == ActiveView::LogList { "view-tab active" } else { "view-tab" },
+                onclick: move |_| state.active_view.set(ActiveView::LogList),
+                "LogList"
+            }
+            button {
+                class: if active == ActiveView::Lens { "view-tab active" } else { "view-tab" },
+                onclick: move |_| state.active_view.set(ActiveView::Lens),
+                "Lens"
+            }
         }
     }
 }
@@ -231,6 +320,12 @@ async fn spawn_mqtt_listener(mut state: AppState) {
         return;
     }
 
+    // Subscribe to lulu-pulse/#
+    if let Err(e) = mqtt.subscribe_pulse().await {
+        tracing::error!("Failed to subscribe to lulu-pulse/#: {}", e);
+        return;
+    }
+
     state.connected.set(true);
 
     loop {
@@ -239,13 +334,46 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                 let topic = publish.topic.clone();
                 let payload_bytes: Vec<u8> = publish.payload.to_vec();
 
-                // Step 1 — Validate topic (must have at least 3 segments: lulu + source + attr)
+                // Step 1 — Route based on topic prefix
                 let segments: Vec<&str> = topic.split('/').collect();
-                if segments.len() < 3 || segments[0] != "lulu" {
-                    tracing::warn!(
-                        "Topic invalide (< 3 niveaux) : {} — ignoré",
-                        topic
+
+                // --- lulu-pulse/{source…} heartbeat messages ---
+                if segments[0] == "lulu-pulse" {
+                    if segments.len() < 2 {
+                        tracing::warn!("lulu-pulse topic too short: {} — ignoré", topic);
+                        continue;
+                    }
+                    let source = segments[1..].join("/");
+                    let json_val = serde_json::from_slice::<serde_json::Value>(&payload_bytes).ok();
+                    let ts = json_val
+                        .as_ref()
+                        .and_then(|v| {
+                            v.get("timestamp")
+                                .and_then(|t| t.as_str())
+                                .map(str::to_string)
+                        })
+                        .unwrap_or_default();
+                    let version = json_val.as_ref().and_then(|v| {
+                        v.get("version")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    });
+                    state.pulse_sources.write().insert(
+                        source.clone(),
+                        PulseSourceEntry {
+                            source,
+                            last_seen_ts: ts,
+                            last_seen_at: Instant::now(),
+                            version,
+                        },
                     );
+                    continue;
+                }
+
+                // --- lulu/{source}/{attribute} log messages ---
+                // Validate topic (must have at least 3 segments: lulu + source + attr)
+                if segments.len() < 3 || segments[0] != "lulu" {
+                    tracing::warn!("Topic invalide (< 3 niveaux) : {} — ignoré", topic);
                     continue;
                 }
 
@@ -310,11 +438,37 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                         timestamp: timestamp.clone(),
                         level,
                         data_type: data_type.clone(),
-                        decoded_value,
+                        decoded_value: decoded_value.clone(),
+                        data_bytes: data_bytes.clone(),
                         raw_payload: payload_bytes,
                     });
                     idx
                 };
+
+                // Step 5b — Feed Lens pins
+                {
+                    let bytes_opt = if data_type == "bytes" {
+                        Some(data_bytes.clone())
+                    } else {
+                        None
+                    };
+                    let attr_opt = if data_type == "bytes" {
+                        Some(attribute.clone())
+                    } else {
+                        None
+                    };
+                    let mut pins = state.lens_pins.write();
+                    for pin in pins.iter_mut() {
+                        if pin.matches(&source, &attribute) {
+                            pin.push_value(
+                                timestamp.clone(),
+                                decoded_value.clone(),
+                                bytes_opt.clone(),
+                                attr_opt.clone(),
+                            );
+                        }
+                    }
+                }
 
                 // Step 5 — Track test scenarios (lulu-logs v1.1.0 §3.4)
                 if data_type == "beg_test_scenario" || data_type == "end_test_scenario" {
@@ -335,8 +489,15 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                                 });
                             } else {
                                 // end_test_scenario — find matching open scenario
-                                let success = json_val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                                let error_msg = json_val.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let success = json_val
+                                    .get("success")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let error_msg = json_val
+                                    .get("error")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
 
                                 let mut scenarios = state.scenarios.write();
                                 if let Some(sc) = scenarios.iter_mut().rev().find(|s| {

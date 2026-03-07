@@ -9,20 +9,20 @@ use std::future::Future;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+mod client;
 mod error;
 mod models;
 mod rand_util;
-mod topic;
 mod serializer;
-mod client;
+mod topic;
 
 #[allow(dead_code, unused_imports, clippy::all)]
 mod lulu_logs_generated;
 
 // --- Public re-exports ---
+pub use client::{LuluClientConfig, LuluStats};
 pub use error::LuluError;
 pub use models::{Data, DataType, LogLevel};
-pub use client::{LuluClientConfig, LuluStats};
 
 use client::LuluClient;
 use serializer::PendingMessage;
@@ -35,7 +35,7 @@ static GLOBAL_CLIENT: OnceLock<LuluClient> = OnceLock::new();
 static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// Returns (or lazily creates) the dedicated single-threaded tokio runtime.
-fn get_or_init_runtime() -> &'static tokio::runtime::Runtime {
+pub(crate) fn get_or_init_runtime() -> &'static tokio::runtime::Runtime {
     TOKIO_RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -81,8 +81,8 @@ pub fn lulu_init(config: LuluClientConfig) -> Result<(), LuluError> {
         return Err(LuluError::AlreadyInitialized);
     }
 
-    let client = block_on_smart(LuluClient::start(config))
-        .map_err(|_| LuluError::AlreadyInitialized)?;
+    let client =
+        block_on_smart(LuluClient::start(config)).map_err(|_| LuluError::AlreadyInitialized)?;
 
     GLOBAL_CLIENT
         .set(client)
@@ -122,6 +122,9 @@ pub fn lulu_shutdown() {
         None => return,
     };
 
+    // Stop all heartbeat tasks before draining the log queue.
+    client.stop_all_pulses();
+
     let _ = block_on_smart(async {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -158,6 +161,35 @@ pub fn lulu_stats() -> Option<LuluStats> {
 }
 
 // ---------------------------------------------------------------------------
+// Heartbeat helpers (lulu-logs v1.2.0 §7)
+// ---------------------------------------------------------------------------
+
+/// Starts a background heartbeat on `lulu-pulse/{source}` every 2 seconds.
+///
+/// The first pulse is emitted immediately upon registration. Calling again
+/// with the same source replaces the existing task (idempotent).
+///
+/// # Errors
+/// Returns `LuluError::NotInitialized` if `lulu_init()` has not been called,
+/// or `LuluError::InvalidSource` if `source` contains invalid segments.
+pub fn lulu_start_pulse(source: &str, version: Option<&str>) -> Result<(), LuluError> {
+    let client = GLOBAL_CLIENT.get().ok_or(LuluError::NotInitialized)?;
+    let source_segments = topic::parse_source(source)?;
+    let pulse_topic = topic::build_pulse_topic(&source_segments);
+    let rt = get_or_init_runtime();
+    client.start_pulse(source.to_string(), pulse_topic, version.map(str::to_string), rt);
+    Ok(())
+}
+
+/// Stops the heartbeat for the given source. No-op if no pulse is running
+/// for that source, or if the client is not initialised.
+pub fn lulu_stop_pulse(source: &str) {
+    if let Some(client) = GLOBAL_CLIENT.get() {
+        client.stop_pulse(source);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test scenario convenience helpers (lulu-logs v1.1.0 §3.4)
 // ---------------------------------------------------------------------------
 
@@ -171,7 +203,12 @@ pub fn lulu_beg_test_scenario(
     scenario_name: &str,
 ) -> Result<(), LuluError> {
     let json = format!(r#"{{"name":"{}"}}"#, scenario_name);
-    lulu_publish(source, attribute, LogLevel::Info, Data::BegTestScenario(json))
+    lulu_publish(
+        source,
+        attribute,
+        LogLevel::Info,
+        Data::BegTestScenario(json),
+    )
 }
 
 /// Publishes an `end_test_scenario` log entry marking the end of a named test scenario.
@@ -203,6 +240,10 @@ pub fn lulu_end_test_scenario(
         )
     };
 
-    let level = if success { LogLevel::Info } else { LogLevel::Error };
+    let level = if success {
+        LogLevel::Info
+    } else {
+        LogLevel::Error
+    };
     lulu_publish(source, attribute, level, Data::EndTestScenario(json))
 }
