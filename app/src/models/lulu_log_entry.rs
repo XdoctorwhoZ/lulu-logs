@@ -131,6 +131,7 @@ pub fn decode_data(type_str: &str, data: &[u8]) -> String {
         "bool"   => decode_bool(data),
         "json"   => decode_json(data),
         "bytes"  => decode_bytes(data),
+        "net_packet" | "serial_chunk" => decode_bytes(data),
         "beg_test_scenario" | "end_test_scenario" => decode_json(data),
         _ => format!("[decode error: unknown type \"{}\"]", type_str),
     }

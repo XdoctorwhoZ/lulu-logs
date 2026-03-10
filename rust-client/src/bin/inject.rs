@@ -555,6 +555,58 @@ fn build_scenarios() -> Vec<Scenario> {
             data: Data::Json(r#"{"timestamp":"2024-01-01T12:00:45.123Z","bytes":256,"errors":0,"baudrate":115200}"#.to_string()),
             description: "RX statistics",
         },
+        // ── Network capture ───────────────────────────────────────────────────
+        Scenario {
+            source: "network/eth0",
+            attribute: "rx",
+            level: LogLevel::Debug,
+            // Minimal Ethernet frame header (dst MAC, src MAC, EtherType IPv4)
+            data: Data::NetPacket(vec![
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // dst: broadcast
+                0xD8, 0x3D, 0xC8, 0x00, 0x01, 0x02, // src: d8:3d:c8:00:01:02
+                0x08, 0x00,                           // EtherType: IPv4
+            ]),
+            description: "Ethernet broadcast frame (header only)",
+        },
+        Scenario {
+            source: "network/eth0",
+            attribute: "tx",
+            level: LogLevel::Trace,
+            data: Data::NetPacket(vec![
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, // dst MAC
+                0xD8, 0x3D, 0xC8, 0x00, 0x01, 0x02, // src MAC
+                0x08, 0x00,                           // EtherType: IPv4
+                0x45, 0x00, 0x00, 0x28,               // IP: version/IHL, DSCP, total length 40
+                0x00, 0x01, 0x00, 0x00,               // IP: identification, flags, fragment offset
+                0x40, 0x11, 0x00, 0x00,               // IP: TTL=64, proto=UDP, checksum placeholder
+                0xC0, 0xA8, 0x01, 0x01,               // IP src: 192.168.1.1
+                0xC0, 0xA8, 0x01, 0x02,               // IP dst: 192.168.1.2
+            ]),
+            description: "IPv4/UDP packet (header)",
+        },
+        // ── Serial link chunks ────────────────────────────────────────────────
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "rx",
+            level: LogLevel::Debug,
+            data: Data::SerialChunk(b"AT+GMR\r\n".to_vec()),
+            description: "AT command received on UART-1",
+        },
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "tx",
+            level: LogLevel::Debug,
+            data: Data::SerialChunk(b"AT+GMR\r\nOK\r\n".to_vec()),
+            description: "AT response sent on UART-1",
+        },
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "rx",
+            level: LogLevel::Info,
+            // Binary frame with non-printable bytes (e.g. a Modbus RTU response)
+            data: Data::SerialChunk(vec![0x01, 0x03, 0x02, 0x00, 0x17, 0xF8, 0x4A]),
+            description: "Modbus RTU response on UART-1",
+        },
     ]
 }
 

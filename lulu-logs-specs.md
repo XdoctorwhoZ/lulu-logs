@@ -104,6 +104,8 @@ Le payload MQTT est un **buffer binaire FlatBuffers** encodant une table `LogEnt
 | `"bool"` | 1 octet : `0x00` = false, `0x01` = true |
 | `"json"` | Document JSON encodé en UTF-8 |
 | `"bytes"` | Données binaires opaques, pas d'interprétation définie |
+| `"net_packet"` | Données binaires opaques contenant un paquet réseau (voir §3.5) |
+| `"serial_chunk"` | Données binaires opaques contenant un fragment de liaison série (voir §3.5) |
 | `"beg_test_scenario"` | Document JSON encodé en UTF-8 (voir §3.4) |
 | `"end_test_scenario"` | Document JSON encodé en UTF-8 (voir §3.4) |
 
@@ -147,6 +149,42 @@ Publié à la **fin** d'un scénario de test.
 ```
 
 > **Note de corrélation** : Le consommateur doit corréler un `end_test_scenario` à son `beg_test_scenario` en faisant correspondre le champ `name` et la source MQTT (topic). Un `end` sans `beg` correspondant doit être ignoré ou signalé comme anomalie.
+
+### 3.5 Types binaires spécialisés — `net_packet` et `serial_chunk`
+
+Ces deux types raffinent le type générique `"bytes"` pour les cas d'usage réseau et liaison série. Le champ `data` contient des octets bruts opaques, sans en-tête ni encapsulation supplémentaire ajoutée par le protocole `lulu-logs`.
+
+#### `"net_packet"`
+
+Données binaires opaques contenant un **paquet réseau** complet (ex. trame Ethernet, paquet IP, paquet UDP/TCP, etc.). Le contenu exact dépend du contexte de la source ; le consommateur doit connaître a priori le type de paquet attendu pour l'interpréter.
+
+| Champ | Valeur |
+|-------|--------|
+| Encodage | Octets bruts — pas de transformation |
+| Taille minimale | 1 octet |
+| Taille maximale | Limitée par `MAX_PAYLOAD_SIZE` (20 480 octets) |
+
+**Exemple d'usage** :
+```
+type  : "net_packet"
+data  : <octets bruts d'une trame Ethernet capturée>
+```
+
+#### `"serial_chunk"`
+
+Données binaires opaques contenant un **fragment de liaison série** (ex. octets reçus/émis sur UART, RS-232, RS-485, SPI, I²C, etc.). Peut contenir n'importe quelle séquence d'octets, y compris des octets nuls ou des caractères de contrôle.
+
+| Champ | Valeur |
+|-------|--------|
+| Encodage | Octets bruts — pas de transformation |
+| Taille minimale | 1 octet |
+| Taille maximale | Limitée par `MAX_PAYLOAD_SIZE` (20 480 octets) |
+
+**Exemple d'usage** :
+```
+type  : "serial_chunk"
+data  : <octets bruts reçus sur UART à 115200 bauds>
+```
 
 ---
 
@@ -203,6 +241,7 @@ table LogEntry {
   // Type descriptor for the data field.
   // Determines how to interpret the raw bytes in `data`.
   // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
+  //               "net_packet", "serial_chunk",
   //               "beg_test_scenario", "end_test_scenario".
   type: string (required);
 

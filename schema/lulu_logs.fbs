@@ -32,7 +32,9 @@ table LogEntry {
 
   // Type descriptor for the data field.
   // Determines how to interpret the raw bytes in `data`.
-  // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes".
+  // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
+  //               "net_packet", "serial_chunk",
+  //               "beg_test_scenario", "end_test_scenario".
   type: string (required);
 
   // The actual data value as a raw binary buffer.

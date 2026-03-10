@@ -53,6 +53,10 @@ pub enum DataType {
     Json,
     /// Données binaires opaques, sans interprétation définie.
     Bytes,
+    /// Paquet réseau opaque (données binaires brutes, §3.5).
+    NetPacket,
+    /// Fragment de liaison série opaque (données binaires brutes, §3.5).
+    SerialChunk,
     /// Début de scénario de test — JSON UTF-8 `{"name":"…"}` (§3.4).
     BegTestScenario,
     /// Fin de scénario de test — JSON UTF-8 `{"name":"…","success":…}` (§3.4).
@@ -71,6 +75,8 @@ impl DataType {
             DataType::Bool            => "bool",
             DataType::Json            => "json",
             DataType::Bytes           => "bytes",
+            DataType::NetPacket       => "net_packet",
+            DataType::SerialChunk     => "serial_chunk",
             DataType::BegTestScenario => "beg_test_scenario",
             DataType::EndTestScenario => "end_test_scenario",
         }
@@ -121,6 +127,16 @@ impl DataType {
     pub fn encode_bytes(v: Vec<u8>) -> Vec<u8> {
         v
     }
+
+    /// Returns opaque bytes as-is (use with [`DataType::NetPacket`]).
+    pub fn encode_net_packet(v: Vec<u8>) -> Vec<u8> {
+        v
+    }
+
+    /// Returns opaque bytes as-is (use with [`DataType::SerialChunk`]).
+    pub fn encode_serial_chunk(v: Vec<u8>) -> Vec<u8> {
+        v
+    }
 }
 
 impl std::fmt::Display for DataType {
@@ -163,6 +179,10 @@ pub enum Data {
     Json(std::string::String),
     /// Opaque binary bytes.
     Bytes(Vec<u8>),
+    /// Opaque binary data containing a network packet (§3.5).
+    NetPacket(Vec<u8>),
+    /// Opaque binary data containing a serial link chunk (§3.5).
+    SerialChunk(Vec<u8>),
     /// Start of test scenario — JSON UTF-8 `{"name":"…"}` (§3.4).
     BegTestScenario(std::string::String),
     /// End of test scenario — JSON UTF-8 `{"name":"…","success":…}` (§3.4).
@@ -181,6 +201,8 @@ impl Data {
             Data::Bool(_)            => DataType::Bool,
             Data::Json(_)            => DataType::Json,
             Data::Bytes(_)           => DataType::Bytes,
+            Data::NetPacket(_)       => DataType::NetPacket,
+            Data::SerialChunk(_)     => DataType::SerialChunk,
             Data::BegTestScenario(_) => DataType::BegTestScenario,
             Data::EndTestScenario(_) => DataType::EndTestScenario,
         }
@@ -197,6 +219,8 @@ impl Data {
             Data::Bool(v)            => DataType::encode_bool(*v),
             Data::Json(s)            => DataType::encode_json(s),
             Data::Bytes(v)           => v.clone(),
+            Data::NetPacket(v)       => v.clone(),
+            Data::SerialChunk(v)     => v.clone(),
             Data::BegTestScenario(s) => DataType::encode_json(s),
             Data::EndTestScenario(s) => DataType::encode_json(s),
         }
