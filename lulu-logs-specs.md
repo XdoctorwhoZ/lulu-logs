@@ -1,6 +1,6 @@
 # lulu-logs — Spécification du protocole de logging MQTT
 
-> **Version** : 1.2.0
+> **Version** : 1.3.0
 > **Date** : 2026-02-27
 > **Objectif** : Ce document décrit exhaustivement le format des topics MQTT et la structure des payloads utilisés par le protocole `lulu-logs`.
 
@@ -11,7 +11,7 @@
 1. [Vue d'ensemble](#1-vue-densemble)
 2. [Convention des topics](#2-convention-des-topics)
 3. [Structure du payload (FlatBuffers)](#3-structure-du-payload-flatbuffers)
-   - [3.4 Types spéciaux — scénarios de test](#34-types-spéciaux--scénarios-de-test)
+  - [3.4 Types spéciaux — spans génériques et dérivés](#34-types-spéciaux--spans-génériques-et-dérivés)
 4. [Schéma FlatBuffers](#4-schéma-flatbuffers)
 5. [Exemples](#5-exemples)
 6. [Règles d'encodage et contraintes](#6-règles-dencodage-et-contraintes)
@@ -106,49 +106,104 @@ Le payload MQTT est un **buffer binaire FlatBuffers** encodant une table `LogEnt
 | `"bytes"` | Données binaires opaques, pas d'interprétation définie |
 | `"net_packet"` | Données binaires opaques contenant un paquet réseau (voir §3.5) |
 | `"serial_chunk"` | Données binaires opaques contenant un fragment de liaison série (voir §3.5) |
-| `"beg_test_scenario"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"end_test_scenario"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"span_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"span_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"scenario_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"scenario_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"tool_call_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `"tool_call_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
 
-### 3.4 Types spéciaux — scénarios de test
+### 3.4 Types spéciaux — spans génériques et dérivés
 
-Ces deux types marquent les bornes du cycle de vie d'un scénario de test nommé. Ils permettent aux consommateurs de logs de reconstruire un rapport de tests en corrélant les événements `beg` et `end` par leur champ `name`.
+Les types `span_beg` et `span_end` marquent les bornes du cycle de vie d'une opération nommée. Ils fournissent un contrat générique réutilisable par des types spécialisés comme `scenario_beg` / `scenario_end` et `tool_call_beg` / `tool_call_end`.
 
 L'encodage du champ `data` est identique au type `"json"` : octets UTF-8 d'un document JSON valide.
 
-#### `"beg_test_scenario"`
+#### Contrat commun de corrélation
 
-Publié au **début** d'un scénario de test.
+Le consommateur DOIT corréler un événement de fin avec son événement de début à l'aide du couple `(span_id, source MQTT)`.
+
+- `span_id` est l'identifiant stable de corrélation.
+- `name` est descriptif et non utilisé pour la corrélation.
+- Un événement `*_end` sans `*_beg` correspondant DOIT être ignoré ou signalé comme anomalie.
+
+#### `"span_beg"`
+
+Publié au **début** d'un span générique.
 
 | Champ JSON | Type | Obligatoire | Description |
 |------------|------|-------------|-------------|
-| `name` | string | Oui | Identifiant unique du scénario |
+| `span_id` | string | Oui | Identifiant unique de corrélation du span |
+| `name` | string | Non | Nom lisible du span |
+| `kind` | string | Oui | Nature du span générique (ex. `"scenario"`, `"tool_call"`, `"calibration"`) |
+| `metadata` | object | Non | Métadonnées structurées libres |
 
 **Exemple** :
 ```json
-{ "name": "psu-channel-1-voltage-regulation" }
+{ "span_id": "span-calibration-001", "name": "calibration-window", "kind": "calibration", "metadata": { "operator": "alice" } }
 ```
 
-#### `"end_test_scenario"`
+#### `"span_end"`
 
-Publié à la **fin** d'un scénario de test.
+Publié à la **fin** d'un span générique.
 
 | Champ JSON | Type | Obligatoire | Description |
 |------------|------|-------------|-------------|
-| `name` | string | Oui | Même identifiant que le `beg_test_scenario` correspondant |
+| `span_id` | string | Oui | Même identifiant que le `span_beg` correspondant |
+| `name` | string | Non | Nom lisible du span |
+| `kind` | string | Oui | Même nature que le `span_beg` correspondant |
 | `success` | bool | Oui | `true` = scénario réussi, `false` = scénario échoué |
 | `error` | string | Conditionnel | Requis si et seulement si `success` est `false` — description lisible de la cause de l'échec. Absent (ou `null`) en cas de succès. |
+| `duration_ms` | uint64 | Non | Durée du span en millisecondes |
+| `metadata` | object | Non | Métadonnées structurées libres |
+| `result` | any JSON | Non | Résultat structuré de l'opération |
 
 **Exemple (succès)** :
 ```json
-{ "name": "psu-channel-1-voltage-regulation", "success": true }
+{ "span_id": "span-calibration-001", "name": "calibration-window", "kind": "calibration", "success": true, "duration_ms": 84, "result": { "calibrated_channels": 4 } }
 ```
 
 **Exemple (échec)** :
 ```json
-{ "name": "psu-channel-1-voltage-regulation", "success": false, "error": "Measured voltage 4.87V exceeded tolerance ±0.05V around target 5.00V" }
+{ "span_id": "span-calibration-002", "name": "calibration-window", "kind": "calibration", "success": false, "error": "Reference drift exceeded tolerance", "duration_ms": 103 }
 ```
 
-> **Note de corrélation** : Le consommateur doit corréler un `end_test_scenario` à son `beg_test_scenario` en faisant correspondre le champ `name` et la source MQTT (topic). Un `end` sans `beg` correspondant doit être ignoré ou signalé comme anomalie.
+#### `"scenario_beg"` et `"scenario_end"`
+
+Ces deux types sont des dérivés spécialisés du contrat span pour les scénarios de test.
+
+- `kind` est implicite et vaut `"scenario"`.
+- `span_id` reste obligatoire et devient la clé de corrélation canonique.
+- `name` contient le nom lisible du scénario.
+
+**Exemple `scenario_beg`** :
+```json
+{ "span_id": "scenario-voltage-regulation-3v3", "name": "voltage-regulation-3v3", "metadata": { "target_voltage": 3.3, "tolerance_v": 0.05 } }
+```
+
+**Exemple `scenario_end`** :
+```json
+{ "span_id": "scenario-voltage-regulation-3v3", "name": "voltage-regulation-3v3", "success": true, "duration_ms": 24, "result": { "measured_min": 3.30, "measured_max": 3.31 } }
+```
+
+#### `"tool_call_beg"` et `"tool_call_end"`
+
+Ces deux types sont des dérivés spécialisés du contrat span pour tracer le début et la fin d'un appel d'outil d'agent.
+
+- `kind` est implicite et vaut `"tool_call"`.
+- `name` contient en pratique le nom de l'outil.
+- `metadata` peut contenir le nom de l'agent, un résumé des arguments et tout contexte utile.
+- `result` peut contenir un résumé structuré du résultat de l'appel d'outil.
+
+**Exemple `tool_call_beg`** :
+```json
+{ "span_id": "tool-call-read-file-001", "name": "read_file", "metadata": { "agent_name": "Copilot", "arguments": { "path": "README.md" } } }
+```
+
+**Exemple `tool_call_end`** :
+```json
+{ "span_id": "tool-call-read-file-001", "name": "read_file", "success": true, "duration_ms": 12, "metadata": { "agent_name": "Copilot" }, "result": { "status": "ok", "bytes_read": 2048 } }
+```
 
 ### 3.5 Types binaires spécialisés — `net_packet` et `serial_chunk`
 
@@ -207,7 +262,7 @@ data  : <octets bruts reçus sur UART à 115200 bauds>
 
 ```fbs
 // lulu_logs.fbs
-// Protocol: lulu-logs v1.1.0
+// Protocol: lulu-logs v1.3.0
 // Description: Schema for MQTT log payloads — source and attribute are carried
 //              exclusively by the topic, not present in this payload.
 
@@ -242,7 +297,9 @@ table LogEntry {
   // Determines how to interpret the raw bytes in `data`.
   // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
   //               "net_packet", "serial_chunk",
-  //               "beg_test_scenario", "end_test_scenario".
+  //               "span_beg", "span_end",
+  //               "scenario_beg", "scenario_end",
+  //               "tool_call_beg", "tool_call_end".
   type: string (required);
 
   // The actual data value as a raw binary buffer.
@@ -318,8 +375,8 @@ lulu/mcp/filesystem/scenario
 ```
 timestamp : "2026-02-26T14:32:00.000Z"
 level     : Info
-type      : "beg_test_scenario"
-data      : <octets UTF-8 de '{"name": "read-file-returns-content"}'>
+type      : "scenario_beg"
+data      : <octets UTF-8 de '{"span_id": "scenario-read-file-returns-content", "name": "read-file-returns-content"}'>
 ```
 
 ### 5.4 Fin d'un scénario de test — succès
@@ -333,8 +390,8 @@ lulu/mcp/filesystem/scenario
 ```
 timestamp : "2026-02-26T14:32:01.245Z"
 level     : Info
-type      : "end_test_scenario"
-data      : <octets UTF-8 de '{"name": "read-file-returns-content", "success": true}'>
+type      : "scenario_end"
+data      : <octets UTF-8 de '{"span_id": "scenario-read-file-returns-content", "name": "read-file-returns-content", "success": true, "duration_ms": 124}'>
 ```
 
 ### 5.5 Fin d'un scénario de test — échec
@@ -348,11 +405,41 @@ lulu/mcp/filesystem/scenario
 ```
 timestamp : "2026-02-26T14:32:01.978Z"
 level     : Error
-type      : "end_test_scenario"
-data      : <octets UTF-8 de '{"name": "read-file-returns-content", "success": false, "error": "Expected file content \"hello\" but got empty response"}'>
+type      : "scenario_end"
+data      : <octets UTF-8 de '{"span_id": "scenario-read-file-returns-content", "name": "read-file-returns-content", "success": false, "error": "Expected file content \"hello\" but got empty response", "duration_ms": 178}'>
 ```
 
-### 5.6 Décodage côté consommateur
+### 5.6 Début d'un appel d'outil d'agent
+
+**Topic** :
+```
+lulu/agent/copilot/tool-call
+```
+
+**Payload** (représentation lisible avant sérialisation FlatBuffers) :
+```
+timestamp : "2026-02-26T14:32:10.000Z"
+level     : Info
+type      : "tool_call_beg"
+data      : <octets UTF-8 de '{"span_id": "tool-call-read-file-001", "name": "read_file", "metadata": {"agent_name": "Copilot", "arguments": {"path": "README.md"}}}'>
+```
+
+### 5.7 Fin d'un appel d'outil d'agent
+
+**Topic** :
+```
+lulu/agent/copilot/tool-call
+```
+
+**Payload** (représentation lisible avant sérialisation FlatBuffers) :
+```
+timestamp : "2026-02-26T14:32:10.012Z"
+level     : Info
+type      : "tool_call_end"
+data      : <octets UTF-8 de '{"span_id": "tool-call-read-file-001", "name": "read_file", "success": true, "duration_ms": 12, "result": {"status": "ok", "bytes_read": 2048}}'>
+```
+
+### 5.8 Décodage côté consommateur
 
 ```
 Topic reçu : lulu/psu/power-supply/channel-1/voltage

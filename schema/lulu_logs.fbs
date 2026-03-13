@@ -1,5 +1,5 @@
 // lulu_logs.fbs
-// Protocol: lulu-logs v1.0.0
+// Protocol: lulu-logs v1.3.0
 // Description: Schema for MQTT log payloads — source and attribute are carried
 //              exclusively by the topic, not present in this payload.
 
@@ -34,7 +34,9 @@ table LogEntry {
   // Determines how to interpret the raw bytes in `data`.
   // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
   //               "net_packet", "serial_chunk",
-  //               "beg_test_scenario", "end_test_scenario".
+  //               "span_beg", "span_end",
+  //               "scenario_beg", "scenario_end",
+  //               "tool_call_beg", "tool_call_end".
   type: string (required);
 
   // The actual data value as a raw binary buffer.
