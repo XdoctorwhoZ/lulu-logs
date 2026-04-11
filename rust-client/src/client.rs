@@ -30,6 +30,10 @@ pub struct LuluClientConfig {
     pub queue_capacity: usize,
     /// MQTT keep-alive interval in seconds.
     pub keep_alive_secs: u64,
+    /// When `true`, test-scenario lifecycle events (`beg_test_scenario` /
+    /// `end_test_scenario`) are printed to stdout with coloured status
+    /// indicators (green = pass, red = fail). Defaults to `false`.
+    pub terminal_logger: bool,
 }
 
 impl Default for LuluClientConfig {
@@ -40,6 +44,7 @@ impl Default for LuluClientConfig {
             client_id_prefix: "lulu-logs-client".to_string(),
             queue_capacity: 256,
             keep_alive_secs: 5,
+            terminal_logger: false,
         }
     }
 }

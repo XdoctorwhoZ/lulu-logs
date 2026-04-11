@@ -827,6 +827,8 @@ fn main() {
         queue_capacity: 256,
         // MQTT keep-alive interval in seconds.
         keep_alive_secs: 5,
+        // Enable coloured test-scenario output on the terminal.
+        terminal_logger: true,
     };
 
     if let Err(e) = lulu_init(config) {
