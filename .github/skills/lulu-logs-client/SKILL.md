@@ -1,3 +1,9 @@
+---
+name: lulu-logs-client
+description: Use when integrating, publishing, or troubleshooting telemetry with the Rust lulu-logs-client crate (init/shutdown lifecycle, source and attribute validation, Data variants, pulse heartbeats, test scenario helpers, queue back-pressure, and runtime stats).
+argument-hint: "[task or issue] [optional source/attribute examples]"
+---
+
 # lulu-logs-client — User Manual
 
 > **Protocol version**: lulu-logs v1.2.0  
@@ -8,23 +14,23 @@
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Adding the dependency](#2-adding-the-dependency)
-3. [Concepts](#3-concepts)
-4. [Lifecycle](#4-lifecycle)
-5. [Configuration reference](#5-configuration-reference)
-6. [Publishing log entries](#6-publishing-log-entries)
-7. [Data types reference](#7-data-types-reference)
-8. [Topic naming rules](#8-topic-naming-rules)
-9. [Log levels](#9-log-levels)
-10. [Heartbeat (pulse)](#10-heartbeat-pulse)
-11. [Test scenario helpers](#11-test-scenario-helpers)
-12. [Error handling](#12-error-handling)
-13. [Runtime statistics](#13-runtime-statistics)
-14. [Complete worked example](#14-complete-worked-example)
-15. [lulu-inject binary](#15-lulu-inject-binary)
-16. [Constraints and limits](#16-constraints-and-limits)
-17. [Quick-reference cheat-sheet](#17-quick-reference-cheat-sheet)
+1. Overview
+2. Adding the dependency
+3. Concepts
+4. Lifecycle
+5. Configuration reference
+6. Publishing log entries
+7. Data types reference
+8. Topic naming rules
+9. Log levels
+10. Heartbeat (pulse)
+11. Test scenario helpers
+12. Error handling
+13. Runtime statistics
+14. Complete worked example
+15. lulu-inject binary
+16. Constraints and limits
+17. Quick-reference cheat-sheet
 
 ---
 
