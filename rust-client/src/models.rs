@@ -6,8 +6,8 @@ use crate::lulu_logs_generated::lulu_logs::LogLevel as FbsLogLevel;
 pub enum LogLevel {
     Trace = 0,
     Debug = 1,
-    Info  = 2,
-    Warn  = 3,
+    Info = 2,
+    Warn = 3,
     Error = 4,
     Fatal = 5,
 }
@@ -18,8 +18,8 @@ impl LogLevel {
         match self {
             LogLevel::Trace => FbsLogLevel::Trace,
             LogLevel::Debug => FbsLogLevel::Debug,
-            LogLevel::Info  => FbsLogLevel::Info,
-            LogLevel::Warn  => FbsLogLevel::Warn,
+            LogLevel::Info => FbsLogLevel::Info,
+            LogLevel::Warn => FbsLogLevel::Warn,
             LogLevel::Error => FbsLogLevel::Error,
             LogLevel::Fatal => FbsLogLevel::Fatal,
         }
@@ -33,7 +33,7 @@ impl LogLevel {
 /// Type de donnée transporté dans le champ `data` d'un `LogEntry`.
 ///
 /// Correspond aux valeurs reconnues définies dans le §3.3 de la spécification
-/// lulu-logs v1.1.0. Utiliser cet enum plutôt qu'une chaîne brute évite les
+/// lulu-logs v1.3.0. Utiliser cet enum plutôt qu'une chaîne brute évite les
 /// fautes de frappe et rend l'API auto-documentée.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DataType {
@@ -53,26 +53,44 @@ pub enum DataType {
     Json,
     /// Données binaires opaques, sans interprétation définie.
     Bytes,
-    /// Début de scénario de test — JSON UTF-8 `{"name":"…"}` (§3.4).
-    BegTestScenario,
-    /// Fin de scénario de test — JSON UTF-8 `{"name":"…","success":…}` (§3.4).
-    EndTestScenario,
+    /// Paquet réseau opaque (données binaires brutes, §3.5).
+    NetPacket,
+    /// Fragment de liaison série opaque (données binaires brutes, §3.5).
+    SerialChunk,
+    /// Début de span générique — JSON UTF-8 avec `span_id` et `kind`.
+    SpanBeg,
+    /// Fin de span générique — JSON UTF-8 avec `span_id`, `kind` et `success`.
+    SpanEnd,
+    /// Début de scénario — dérivé spécialisé de `span_beg`.
+    ScenarioBeg,
+    /// Fin de scénario — dérivé spécialisé de `span_end`.
+    ScenarioEnd,
+    /// Début d'appel d'outil — dérivé spécialisé de `span_beg`.
+    ToolCallBeg,
+    /// Fin d'appel d'outil — dérivé spécialisé de `span_end`.
+    ToolCallEnd,
 }
 
 impl DataType {
     /// Returns the protocol wire string for this data type (as defined in §3.3).
     pub fn as_str(&self) -> &'static str {
         match self {
-            DataType::String          => "string",
-            DataType::Int32           => "int32",
-            DataType::Int64           => "int64",
-            DataType::Float32         => "float32",
-            DataType::Float64         => "float64",
-            DataType::Bool            => "bool",
-            DataType::Json            => "json",
-            DataType::Bytes           => "bytes",
-            DataType::BegTestScenario => "beg_test_scenario",
-            DataType::EndTestScenario => "end_test_scenario",
+            DataType::String => "string",
+            DataType::Int32 => "int32",
+            DataType::Int64 => "int64",
+            DataType::Float32 => "float32",
+            DataType::Float64 => "float64",
+            DataType::Bool => "bool",
+            DataType::Json => "json",
+            DataType::Bytes => "bytes",
+            DataType::NetPacket => "net_packet",
+            DataType::SerialChunk => "serial_chunk",
+            DataType::SpanBeg => "span_beg",
+            DataType::SpanEnd => "span_end",
+            DataType::ScenarioBeg => "scenario_beg",
+            DataType::ScenarioEnd => "scenario_end",
+            DataType::ToolCallBeg => "tool_call_beg",
+            DataType::ToolCallEnd => "tool_call_end",
         }
     }
 
@@ -121,6 +139,16 @@ impl DataType {
     pub fn encode_bytes(v: Vec<u8>) -> Vec<u8> {
         v
     }
+
+    /// Returns opaque bytes as-is (use with [`DataType::NetPacket`]).
+    pub fn encode_net_packet(v: Vec<u8>) -> Vec<u8> {
+        v
+    }
+
+    /// Returns opaque bytes as-is (use with [`DataType::SerialChunk`]).
+    pub fn encode_serial_chunk(v: Vec<u8>) -> Vec<u8> {
+        v
+    }
 }
 
 impl std::fmt::Display for DataType {
@@ -163,42 +191,66 @@ pub enum Data {
     Json(std::string::String),
     /// Opaque binary bytes.
     Bytes(Vec<u8>),
-    /// Start of test scenario — JSON UTF-8 `{"name":"…"}` (§3.4).
-    BegTestScenario(std::string::String),
-    /// End of test scenario — JSON UTF-8 `{"name":"…","success":…}` (§3.4).
-    EndTestScenario(std::string::String),
+    /// Opaque binary data containing a network packet (§3.5).
+    NetPacket(Vec<u8>),
+    /// Opaque binary data containing a serial link chunk (§3.5).
+    SerialChunk(Vec<u8>),
+    /// Generic span begin payload encoded as UTF-8 JSON.
+    SpanBeg(std::string::String),
+    /// Generic span end payload encoded as UTF-8 JSON.
+    SpanEnd(std::string::String),
+    /// Specialized scenario begin payload encoded as UTF-8 JSON.
+    ScenarioBeg(std::string::String),
+    /// Specialized scenario end payload encoded as UTF-8 JSON.
+    ScenarioEnd(std::string::String),
+    /// Specialized tool-call begin payload encoded as UTF-8 JSON.
+    ToolCallBeg(std::string::String),
+    /// Specialized tool-call end payload encoded as UTF-8 JSON.
+    ToolCallEnd(std::string::String),
 }
 
 impl Data {
     /// Returns the [`DataType`] tag that corresponds to this variant.
     pub fn data_type(&self) -> DataType {
         match self {
-            Data::String(_)          => DataType::String,
-            Data::Int32(_)           => DataType::Int32,
-            Data::Int64(_)           => DataType::Int64,
-            Data::Float32(_)         => DataType::Float32,
-            Data::Float64(_)         => DataType::Float64,
-            Data::Bool(_)            => DataType::Bool,
-            Data::Json(_)            => DataType::Json,
-            Data::Bytes(_)           => DataType::Bytes,
-            Data::BegTestScenario(_) => DataType::BegTestScenario,
-            Data::EndTestScenario(_) => DataType::EndTestScenario,
+            Data::String(_) => DataType::String,
+            Data::Int32(_) => DataType::Int32,
+            Data::Int64(_) => DataType::Int64,
+            Data::Float32(_) => DataType::Float32,
+            Data::Float64(_) => DataType::Float64,
+            Data::Bool(_) => DataType::Bool,
+            Data::Json(_) => DataType::Json,
+            Data::Bytes(_) => DataType::Bytes,
+            Data::NetPacket(_) => DataType::NetPacket,
+            Data::SerialChunk(_) => DataType::SerialChunk,
+            Data::SpanBeg(_) => DataType::SpanBeg,
+            Data::SpanEnd(_) => DataType::SpanEnd,
+            Data::ScenarioBeg(_) => DataType::ScenarioBeg,
+            Data::ScenarioEnd(_) => DataType::ScenarioEnd,
+            Data::ToolCallBeg(_) => DataType::ToolCallBeg,
+            Data::ToolCallEnd(_) => DataType::ToolCallEnd,
         }
     }
 
     /// Encodes the carried value into raw bytes following the §3.3 wire format.
     pub fn encode(&self) -> Vec<u8> {
         match self {
-            Data::String(s)          => DataType::encode_string(s),
-            Data::Int32(v)           => DataType::encode_int32(*v),
-            Data::Int64(v)           => DataType::encode_int64(*v),
-            Data::Float32(v)         => DataType::encode_float32(*v),
-            Data::Float64(v)         => DataType::encode_float64(*v),
-            Data::Bool(v)            => DataType::encode_bool(*v),
-            Data::Json(s)            => DataType::encode_json(s),
-            Data::Bytes(v)           => v.clone(),
-            Data::BegTestScenario(s) => DataType::encode_json(s),
-            Data::EndTestScenario(s) => DataType::encode_json(s),
+            Data::String(s) => DataType::encode_string(s),
+            Data::Int32(v) => DataType::encode_int32(*v),
+            Data::Int64(v) => DataType::encode_int64(*v),
+            Data::Float32(v) => DataType::encode_float32(*v),
+            Data::Float64(v) => DataType::encode_float64(*v),
+            Data::Bool(v) => DataType::encode_bool(*v),
+            Data::Json(s) => DataType::encode_json(s),
+            Data::Bytes(v) => v.clone(),
+            Data::NetPacket(v) => v.clone(),
+            Data::SerialChunk(v) => v.clone(),
+            Data::SpanBeg(s) => DataType::encode_json(s),
+            Data::SpanEnd(s) => DataType::encode_json(s),
+            Data::ScenarioBeg(s) => DataType::encode_json(s),
+            Data::ScenarioEnd(s) => DataType::encode_json(s),
+            Data::ToolCallBeg(s) => DataType::encode_json(s),
+            Data::ToolCallEnd(s) => DataType::encode_json(s),
         }
     }
 }

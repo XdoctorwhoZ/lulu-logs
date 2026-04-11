@@ -11,7 +11,7 @@ use crate::components::{
 use crate::generated::lulu_logs_generated::lulu_logs::root_as_log_entry;
 use crate::models::{
     decode_data, ActiveView, LensLayout, LensPinData, LuluLevel, LuluLogEntry, PulseSourceEntry,
-    ScenarioStatus, TestScenario,
+    ScenarioStatus, SpanPhase, TestScenario, parse_span_event,
 };
 use crate::mqtt::PzaMqttClient;
 
@@ -72,10 +72,10 @@ pub struct AppState {
     /// Total messages received from the broker (across all pauses).
     pub total_received: Signal<usize>,
 
-    // --- Test scenarios (lulu-logs v1.1.0 §3.4) ---
-    /// Tracked test scenarios (correlated beg/end pairs).
+    // --- Test scenarios projected from spans ---
+    /// Tracked test scenarios (correlated begin/end span pairs).
     pub scenarios: Signal<Vec<TestScenario>>,
-    /// When set, only show logs belonging to this scenario (by name+source).
+    /// When set, only show logs belonging to this scenario (by span_id+source).
     pub selected_scenario: Signal<Option<(String, String)>>,
 
     // --- Heartbeats (lulu-logs v1.2.0 §7) ---
@@ -155,11 +155,11 @@ pub fn is_entry_visible(entry: &LuluLogEntry, state: &AppState, log_index: usize
         return false;
     }
     // 5. Scenario filter — if a scenario is selected, only show logs within its bounds
-    if let Some((ref sel_name, ref sel_source)) = *state.selected_scenario.read() {
+    if let Some((ref sel_span_id, ref sel_source)) = *state.selected_scenario.read() {
         let scenarios = state.scenarios.read();
         if let Some(sc) = scenarios
             .iter()
-            .find(|s| &s.name == sel_name && &s.source == sel_source)
+            .find(|s| &s.span_id == sel_span_id && &s.source == sel_source)
         {
             if !sc.contains_log_index(log_index) {
                 return false;
@@ -470,14 +470,15 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                     }
                 }
 
-                // Step 5 — Track test scenarios (lulu-logs v1.1.0 §3.4)
-                if data_type == "beg_test_scenario" || data_type == "end_test_scenario" {
-                    if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&data_bytes) {
-                        if let Some(scenario_name) = json_val.get("name").and_then(|v| v.as_str()) {
-                            let scenario_name = scenario_name.to_string();
+                // Step 5 — Project scenario spans into scenario state.
+                if let Some(span) = parse_span_event(&data_type, &data_bytes) {
+                    if span.is_scenario() {
+                        let scenario_name = span.name.unwrap_or_else(|| span.span_id.clone());
 
-                            if data_type == "beg_test_scenario" {
+                        match span.phase {
+                            SpanPhase::Beg => {
                                 state.scenarios.write().push(TestScenario {
+                                    span_id: span.span_id,
                                     name: scenario_name,
                                     source: source.clone(),
                                     attribute: attribute.clone(),
@@ -487,21 +488,14 @@ async fn spawn_mqtt_listener(mut state: AppState) {
                                     end_log_index: None,
                                     status: ScenarioStatus::InProgress,
                                 });
-                            } else {
-                                // end_test_scenario — find matching open scenario
-                                let success = json_val
-                                    .get("success")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false);
-                                let error_msg = json_val
-                                    .get("error")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
+                            }
+                            SpanPhase::End => {
+                                let success = span.success.unwrap_or(false);
+                                let error_msg = span.error.unwrap_or_default();
 
                                 let mut scenarios = state.scenarios.write();
                                 if let Some(sc) = scenarios.iter_mut().rev().find(|s| {
-                                    s.name == scenario_name
+                                    s.span_id == span.span_id
                                         && s.source == source
                                         && s.end_log_index.is_none()
                                 }) {

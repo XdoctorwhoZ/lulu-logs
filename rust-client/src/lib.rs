@@ -25,6 +25,7 @@ pub use error::LuluError;
 pub use models::{Data, DataType, LogLevel};
 
 use client::LuluClient;
+use serde_json::{Map, Value};
 use serializer::PendingMessage;
 
 // ---------------------------------------------------------------------------
@@ -177,7 +178,12 @@ pub fn lulu_start_pulse(source: &str, version: Option<&str>) -> Result<(), LuluE
     let source_segments = topic::parse_source(source)?;
     let pulse_topic = topic::build_pulse_topic(&source_segments);
     let rt = get_or_init_runtime();
-    client.start_pulse(source.to_string(), pulse_topic, version.map(str::to_string), rt);
+    client.start_pulse(
+        source.to_string(),
+        pulse_topic,
+        version.map(str::to_string),
+        rt,
+    );
     Ok(())
 }
 
@@ -190,60 +196,199 @@ pub fn lulu_stop_pulse(source: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Test scenario convenience helpers (lulu-logs v1.1.0 §3.4)
+// Span convenience helpers (lulu-logs v1.3.0 §3.4)
 // ---------------------------------------------------------------------------
 
-/// Publishes a `beg_test_scenario` log entry marking the start of a named test scenario.
-///
-/// The `data` payload is a JSON object `{"name":"<scenario_name>"}` encoded as UTF-8 bytes.
-/// The log level is always `Info`.
-pub fn lulu_beg_test_scenario(
-    source: &str,
-    attribute: &str,
-    scenario_name: &str,
-) -> Result<(), LuluError> {
-    let json = format!(r#"{{"name":"{}"}}"#, scenario_name);
-    lulu_publish(
-        source,
-        attribute,
-        LogLevel::Info,
-        Data::BegTestScenario(json),
-    )
+fn build_span_payload(
+    span_id: &str,
+    name: Option<&str>,
+    kind: Option<&str>,
+    success: Option<bool>,
+    error: Option<&str>,
+    duration_ms: Option<u64>,
+    metadata: Option<&Value>,
+    result: Option<&Value>,
+) -> String {
+    let mut payload = Map::new();
+    payload.insert("span_id".to_string(), Value::String(span_id.to_string()));
+
+    if let Some(name) = name {
+        payload.insert("name".to_string(), Value::String(name.to_string()));
+    }
+
+    if let Some(kind) = kind {
+        payload.insert("kind".to_string(), Value::String(kind.to_string()));
+    }
+
+    if let Some(success) = success {
+        payload.insert("success".to_string(), Value::Bool(success));
+    }
+
+    if let Some(error) = error {
+        payload.insert("error".to_string(), Value::String(error.to_string()));
+    }
+
+    if let Some(duration_ms) = duration_ms {
+        payload.insert("duration_ms".to_string(), Value::from(duration_ms));
+    }
+
+    if let Some(metadata) = metadata {
+        payload.insert("metadata".to_string(), metadata.clone());
+    }
+
+    if let Some(result) = result {
+        payload.insert("result".to_string(), result.clone());
+    }
+
+    Value::Object(payload).to_string()
 }
 
-/// Publishes an `end_test_scenario` log entry marking the end of a named test scenario.
+/// Publishes a generic `span_beg` log entry.
 ///
-/// The `data` payload is a JSON object containing `name`, `success`, and (on failure) `error`.
-/// The log level is `Info` when `success` is `true`, `Error` when `false`.
-///
-/// # Arguments
-/// * `source` — MQTT source segments (e.g. `"mcp/filesystem"`)
-/// * `attribute` — MQTT attribute (last topic segment)
-/// * `scenario_name` — must match the name used in the corresponding `lulu_beg_test_scenario`
-/// * `success` — `true` = scenario passed, `false` = scenario failed
-/// * `error` — required when `success` is `false`; human-readable failure description
-pub fn lulu_end_test_scenario(
+/// Generic spans carry an explicit `kind` so downstream consumers can project
+/// them into specialized views.
+pub fn lulu_span_beg(
     source: &str,
     attribute: &str,
-    scenario_name: &str,
+    span_id: &str,
+    name: Option<&str>,
+    kind: &str,
+    metadata: Option<&Value>,
+) -> Result<(), LuluError> {
+    let json = build_span_payload(span_id, name, Some(kind), None, None, None, metadata, None);
+    lulu_publish(source, attribute, LogLevel::Info, Data::SpanBeg(json))
+}
+
+/// Publishes a generic `span_end` log entry.
+pub fn lulu_span_end(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    name: Option<&str>,
+    kind: &str,
     success: bool,
     error: Option<&str>,
+    duration_ms: Option<u64>,
+    metadata: Option<&Value>,
+    result: Option<&Value>,
 ) -> Result<(), LuluError> {
-    let json = if success {
-        format!(r#"{{"name":"{}","success":true}}"#, scenario_name)
-    } else {
-        let err_msg = error.unwrap_or("unknown error");
-        format!(
-            r#"{{"name":"{}","success":false,"error":"{}"}}"#,
-            scenario_name,
-            err_msg.replace('\\', "\\\\").replace('"', "\\\"")
-        )
-    };
+    let json = build_span_payload(
+        span_id,
+        name,
+        Some(kind),
+        Some(success),
+        error,
+        duration_ms,
+        metadata,
+        result,
+    );
 
     let level = if success {
         LogLevel::Info
     } else {
         LogLevel::Error
     };
-    lulu_publish(source, attribute, level, Data::EndTestScenario(json))
+    lulu_publish(source, attribute, level, Data::SpanEnd(json))
+}
+
+/// Publishes a specialized `scenario_beg` log entry.
+pub fn lulu_scenario_beg(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    scenario_name: &str,
+    metadata: Option<&Value>,
+) -> Result<(), LuluError> {
+    let json = build_span_payload(
+        span_id,
+        Some(scenario_name),
+        None,
+        None,
+        None,
+        None,
+        metadata,
+        None,
+    );
+    lulu_publish(source, attribute, LogLevel::Info, Data::ScenarioBeg(json))
+}
+
+/// Publishes a specialized `scenario_end` log entry.
+pub fn lulu_scenario_end(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    scenario_name: &str,
+    success: bool,
+    error: Option<&str>,
+    duration_ms: Option<u64>,
+    metadata: Option<&Value>,
+    result: Option<&Value>,
+) -> Result<(), LuluError> {
+    let json = build_span_payload(
+        span_id,
+        Some(scenario_name),
+        None,
+        Some(success),
+        error,
+        duration_ms,
+        metadata,
+        result,
+    );
+    let level = if success {
+        LogLevel::Info
+    } else {
+        LogLevel::Error
+    };
+    lulu_publish(source, attribute, level, Data::ScenarioEnd(json))
+}
+
+/// Publishes a specialized `tool_call_beg` log entry.
+pub fn lulu_tool_call_beg(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    tool_name: &str,
+    metadata: Option<&Value>,
+) -> Result<(), LuluError> {
+    let json = build_span_payload(
+        span_id,
+        Some(tool_name),
+        None,
+        None,
+        None,
+        None,
+        metadata,
+        None,
+    );
+    lulu_publish(source, attribute, LogLevel::Info, Data::ToolCallBeg(json))
+}
+
+/// Publishes a specialized `tool_call_end` log entry.
+pub fn lulu_tool_call_end(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    tool_name: &str,
+    success: bool,
+    error: Option<&str>,
+    duration_ms: Option<u64>,
+    metadata: Option<&Value>,
+    result: Option<&Value>,
+) -> Result<(), LuluError> {
+    let json = build_span_payload(
+        span_id,
+        Some(tool_name),
+        None,
+        Some(success),
+        error,
+        duration_ms,
+        metadata,
+        result,
+    );
+    let level = if success {
+        LogLevel::Info
+    } else {
+        LogLevel::Error
+    };
+    lulu_publish(source, attribute, level, Data::ToolCallEnd(json))
 }

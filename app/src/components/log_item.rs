@@ -2,10 +2,11 @@ use dioxus::prelude::*;
 
 use crate::app::AppState;
 use crate::models::lens_pin::LensPinData;
+use crate::models::{is_span_type, parse_span_event};
 use crate::models::test_scenario::ScenarioStatus;
 use crate::models::LuluLogEntry;
 
-/// Renders a single log entry row, with special rendering for scenario beg/end entries.
+/// Renders a single log entry row, with special rendering for tracked scenario spans.
 #[component]
 pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
     let mut expanded = use_signal(|| false);
@@ -13,9 +14,8 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
     let mut state = use_context::<AppState>();
     let level_class = entry.level.css_class();
     let is_json = entry.data_type == "json";
-    let is_beg = entry.data_type == "beg_test_scenario";
-    let is_end = entry.data_type == "end_test_scenario";
-    let is_expandable = is_json || is_beg || is_end;
+    let is_span = is_span_type(&entry.data_type);
+    let is_expandable = is_json || is_span;
 
     let entry_source = entry.source.clone();
     let entry_attribute = entry.attribute.clone();
@@ -24,16 +24,27 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
     // Extract HH:MM:SS.mmm from ISO 8601 timestamp
     let time_display = extract_time(&entry.timestamp);
 
+    let scenario_snapshot = state
+        .scenarios
+        .read()
+        .iter()
+        .find(|s| s.beg_log_index == log_index || s.end_log_index == Some(log_index))
+        .cloned();
+    let is_beg = scenario_snapshot
+        .as_ref()
+        .is_some_and(|scenario| scenario.beg_log_index == log_index);
+    let is_end = scenario_snapshot
+        .as_ref()
+        .is_some_and(|scenario| scenario.end_log_index == Some(log_index));
+
     // Determine scenario-specific CSS class
     let scenario_class = if is_beg {
         " scenario-beg"
     } else if is_end {
-        // Check if success or failure
-        let scenarios = state.scenarios.read();
-        let is_success = scenarios.iter().any(|s| {
-            s.end_log_index == Some(log_index) && matches!(s.status, ScenarioStatus::Success)
-        });
-        if is_success {
+        if scenario_snapshot
+            .as_ref()
+            .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
+        {
             " scenario-end-success"
         } else {
             " scenario-end-fail"
@@ -55,7 +66,13 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
 
     // Extract scenario name for beg/end display
     let scenario_name = if is_beg || is_end {
-        extract_scenario_name(&entry.decoded_value)
+        scenario_snapshot.as_ref().map(|scenario| scenario.name.clone())
+    } else {
+        None
+    };
+    let span_label = if is_span && !is_beg && !is_end {
+        parse_span_event(&entry.data_type, &entry.data_bytes)
+            .and_then(|span| span.name.or(Some(span.span_id)))
     } else {
         None
     };
@@ -86,16 +103,13 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
             if is_beg {
                 span { class: "scenario-tag scenario-tag-beg", "BEGIN" }
             } else if is_end {
+                if scenario_snapshot
+                    .as_ref()
+                    .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
                 {
-                    let scenarios = state.scenarios.read();
-                    let is_success = scenarios.iter().any(|s| {
-                        s.end_log_index == Some(log_index) && matches!(s.status, ScenarioStatus::Success)
-                    });
-                    if is_success {
-                        rsx! { span { class: "scenario-tag scenario-tag-end-success", "END ✅" } }
-                    } else {
-                        rsx! { span { class: "scenario-tag scenario-tag-end-fail", "END ❌" } }
-                    }
+                    span { class: "scenario-tag scenario-tag-end-success", "END ✅" }
+                } else {
+                    span { class: "scenario-tag scenario-tag-end-fail", "END ❌" }
                 }
             } else {
                 span { class: "log-data-type", "{entry.data_type}" }
@@ -104,6 +118,8 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
             // Value display
             if let Some(ref name) = scenario_name {
                 span { class: "log-value scenario-name-display", "{name}" }
+            } else if let Some(ref label) = span_label {
+                span { class: "log-value", "{label}" }
             } else {
                 span { class: "log-value", "{entry.decoded_value}" }
             }
@@ -230,13 +246,6 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
             }
         }
     }
-}
-
-/// Extracts the scenario name from the decoded JSON value.
-fn extract_scenario_name(decoded_value: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(decoded_value)
-        .ok()
-        .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
 }
 
 /// Extracts `HH:MM:SS.mmm` from an ISO 8601 timestamp string.

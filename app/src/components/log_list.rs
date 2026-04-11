@@ -20,6 +20,14 @@ pub fn LogList() -> Element {
 
     let total_count = logs.len();
     let visible_count = visible_logs.len();
+    let selected_scenario_name = selected_scenario.as_ref().and_then(|(span_id, source)| {
+        state
+            .scenarios
+            .read()
+            .iter()
+            .find(|scenario| &scenario.span_id == span_id && &scenario.source == source)
+            .map(|scenario| scenario.name.clone())
+    });
 
     // Auto-scroll effect
     if auto_scroll && !visible_logs.is_empty() {
@@ -37,7 +45,7 @@ pub fn LogList() -> Element {
                 "⏸ Flux en pause — les nouveaux messages sont ignorés"
             }
         }
-        if let Some((ref sc_name, _)) = selected_scenario {
+        if let Some(sc_name) = selected_scenario_name {
             div { class: "scenario-filter-banner",
                 "🔍 Scénario : {sc_name}"
                 span {

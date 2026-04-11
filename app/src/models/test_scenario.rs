@@ -9,12 +9,14 @@ pub enum ScenarioStatus {
     Failure(String),
 }
 
-/// A test scenario tracked by correlating `beg_test_scenario` and `end_test_scenario` log entries.
+/// A test scenario tracked by correlating span lifecycle log entries.
 ///
-/// Scenarios are identified by `(name, source)` — the same scenario name from different
-/// MQTT sources are treated as distinct scenarios (per lulu-logs v1.1.0 §3.4).
+/// Scenarios are identified by `(span_id, source)`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestScenario {
+    /// Stable correlation identifier shared by the begin and end events.
+    pub span_id: String,
+
     /// Scenario identifier (from the JSON `name` field).
     pub name: String,
 
@@ -24,16 +26,16 @@ pub struct TestScenario {
     /// MQTT attribute on which beg/end are published.
     pub attribute: String,
 
-    /// Timestamp of the `beg_test_scenario` entry.
+    /// Timestamp of the scenario begin entry.
     pub beg_timestamp: String,
 
-    /// Timestamp of the `end_test_scenario` entry (if received).
+    /// Timestamp of the scenario end entry (if received).
     pub end_timestamp: Option<String>,
 
-    /// Index into `AppState.logs` of the `beg_test_scenario` entry.
+    /// Index into `AppState.logs` of the scenario begin entry.
     pub beg_log_index: usize,
 
-    /// Index into `AppState.logs` of the `end_test_scenario` entry (if received).
+    /// Index into `AppState.logs` of the scenario end entry (if received).
     pub end_log_index: Option<usize>,
 
     /// Current status.
