@@ -260,7 +260,7 @@ pub fn lulu_beg_test_scenario(
         source,
         attribute,
         LogLevel::Info,
-        Data::BegTestScenario(Value::Object(payload).to_string()),
+        Data::ScenarioBeg(Value::Object(payload).to_string()),
     )
 }
 
@@ -290,7 +290,7 @@ pub fn lulu_end_test_scenario(
         source,
         attribute,
         level,
-        Data::EndTestScenario(Value::Object(payload).to_string()),
+        Data::ScenarioEnd(Value::Object(payload).to_string()),
     )
 }
 
