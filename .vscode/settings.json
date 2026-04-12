@@ -8,5 +8,7 @@
         "cargo check": true,
         "cargo test": true,
         "cargo run": true
+        "git fetch": true,
+        "git rebase": true
     },
 }

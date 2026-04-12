@@ -14,6 +14,7 @@ mod error;
 mod models;
 mod rand_util;
 mod serializer;
+mod terminal_logger;
 mod topic;
 
 #[allow(dead_code, unused_imports, clippy::all)]
@@ -81,6 +82,9 @@ pub fn lulu_init(config: LuluClientConfig) -> Result<(), LuluError> {
     if GLOBAL_CLIENT.get().is_some() {
         return Err(LuluError::AlreadyInitialized);
     }
+
+    // Activate the optional terminal logger for test scenarios.
+    terminal_logger::set_enabled(config.terminal_logger);
 
     let client =
         block_on_smart(LuluClient::start(config)).map_err(|_| LuluError::AlreadyInitialized)?;
@@ -241,6 +245,53 @@ fn build_span_payload(
     }
 
     Value::Object(payload).to_string()
+}
+
+/// Publishes a `beg_test_scenario` log entry marking the start of a named test scenario.
+pub fn lulu_beg_test_scenario(
+    source: &str,
+    attribute: &str,
+    scenario_name: &str,
+) -> Result<(), LuluError> {
+    terminal_logger::print_beg(scenario_name);
+    let mut payload = Map::new();
+    payload.insert("name".to_string(), Value::String(scenario_name.to_string()));
+    lulu_publish(
+        source,
+        attribute,
+        LogLevel::Info,
+        Data::ScenarioBeg(Value::Object(payload).to_string()),
+    )
+}
+
+/// Publishes an `end_test_scenario` log entry for a named test scenario.
+pub fn lulu_end_test_scenario(
+    source: &str,
+    attribute: &str,
+    scenario_name: &str,
+    success: bool,
+    error: Option<&str>,
+) -> Result<(), LuluError> {
+    terminal_logger::print_end(scenario_name, success, error);
+
+    let mut payload = Map::new();
+    payload.insert("name".to_string(), Value::String(scenario_name.to_string()));
+    payload.insert("success".to_string(), Value::Bool(success));
+    if let Some(err) = error {
+        payload.insert("error".to_string(), Value::String(err.to_string()));
+    }
+
+    let level = if success {
+        LogLevel::Info
+    } else {
+        LogLevel::Error
+    };
+    lulu_publish(
+        source,
+        attribute,
+        level,
+        Data::ScenarioEnd(Value::Object(payload).to_string()),
+    )
 }
 
 /// Publishes a generic `span_beg` log entry.
