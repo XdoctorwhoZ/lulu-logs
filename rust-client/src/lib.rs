@@ -6,13 +6,15 @@
 //! that serialises log entries as FlatBuffers payloads and publishes them over MQTT.
 
 use std::future::Future;
-use std::sync::OnceLock;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 mod client;
 mod error;
 mod models;
 mod rand_util;
+mod recorder;
 mod serializer;
 mod terminal_logger;
 mod topic;
@@ -20,12 +22,16 @@ mod topic;
 #[allow(dead_code, unused_imports, clippy::all)]
 mod lulu_logs_generated;
 
+#[allow(dead_code, unused_imports, clippy::all)]
+mod lulu_export_generated;
+
 // --- Public re-exports ---
 pub use client::{LuluClientConfig, LuluStats};
 pub use error::LuluError;
 pub use models::{Data, DataType, LogLevel};
 
 use client::LuluClient;
+use recorder::LuluRecorder;
 use serde_json::{Map, Value};
 use serializer::PendingMessage;
 
@@ -35,6 +41,7 @@ use serializer::PendingMessage;
 
 static GLOBAL_CLIENT: OnceLock<LuluClient> = OnceLock::new();
 static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static GLOBAL_RECORDER: OnceLock<Mutex<Option<LuluRecorder>>> = OnceLock::new();
 
 /// Returns (or lazily creates) the dedicated single-threaded tokio runtime.
 pub(crate) fn get_or_init_runtime() -> &'static tokio::runtime::Runtime {
@@ -442,4 +449,85 @@ pub fn lulu_tool_call_end(
         LogLevel::Error
     };
     lulu_publish(source, attribute, level, Data::ToolCallEnd(json))
+}
+
+// ---------------------------------------------------------------------------
+// Embedded recorder (lulu-logs v1.3.0)
+// ---------------------------------------------------------------------------
+
+fn get_or_init_recorder() -> &'static Mutex<Option<LuluRecorder>> {
+    GLOBAL_RECORDER.get_or_init(|| Mutex::new(None))
+}
+
+/// Starts an embedded MQTT broker and records all `lulu/#` log entries to a
+/// `.lulu` file.
+///
+/// This function also calls [`lulu_init`] internally so the current process
+/// can publish logs immediately after calling `lulu_start_recorder`.
+/// If `lulu_init` was already called this function returns
+/// `Err(LuluError::AlreadyInitialized)`.
+///
+/// # Arguments
+/// * `file_path` — destination `.lulu` file.  Pass `None` to use the default
+///   path (`lulu_recording.lulu` in the current working directory).  If the
+///   file already exists its records are preserved and the new entries are
+///   appended on [`lulu_stop_recorder`].
+///
+/// # Example
+/// ```no_run
+/// use lulu_logs_client::{lulu_start_recorder, lulu_stop_recorder, lulu_publish, LogLevel, Data};
+///
+/// lulu_start_recorder(None).unwrap();
+/// lulu_publish("my-service", "status", LogLevel::Info, Data::String("ok".into())).unwrap();
+/// lulu_stop_recorder().unwrap();
+/// ```
+pub fn lulu_start_recorder(file_path: Option<PathBuf>) -> Result<(), LuluError> {
+    let path = file_path.unwrap_or_else(recorder::default_recording_path);
+
+    // Start the broker and subscriber, and get the broker port.
+    let (rec, port) = block_on_smart(recorder::LuluRecorder::start(path))
+        .map_err(|e| {
+            tracing::error!("recorder: failed to start: {}", e);
+            LuluError::RecorderStartFailed
+        })?;
+
+    // Store the recorder singleton.
+    {
+        let mut guard = get_or_init_recorder().lock().unwrap();
+        if guard.is_some() {
+            return Err(LuluError::AlreadyInitialized);
+        }
+        *guard = Some(rec);
+    }
+
+    // Initialise the publish client pointing at the embedded broker.
+    lulu_init(LuluClientConfig {
+        broker_host: "127.0.0.1".to_string(),
+        broker_port: port,
+        ..Default::default()
+    })
+}
+
+/// Stops the embedded recorder, waits for in-flight messages to be captured,
+/// then writes (or appends to) the `.lulu` file.
+///
+/// Also calls [`lulu_shutdown`] to drain the publish queue before writing.
+/// If the recorder was never started this function is a no-op.
+pub fn lulu_stop_recorder() -> Result<(), LuluError> {
+    // Drain the publish queue first.
+    lulu_shutdown();
+
+    let rec = {
+        let mut guard = get_or_init_recorder().lock().unwrap();
+        guard.take()
+    };
+
+    if let Some(rec) = rec {
+        block_on_smart(rec.stop()).map_err(|e| {
+            tracing::error!("recorder: failed to stop or write file: {}", e);
+            LuluError::RecorderStopFailed
+        })?;
+    }
+
+    Ok(())
 }

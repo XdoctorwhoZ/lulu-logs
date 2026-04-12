@@ -18,6 +18,12 @@ pub enum LuluError {
 
     /// The type string must not be empty.
     InvalidType,
+
+    /// The embedded recorder failed to start.
+    RecorderStartFailed,
+
+    /// The embedded recorder failed to stop or write the output file.
+    RecorderStopFailed,
 }
 
 impl std::fmt::Display for LuluError {
@@ -40,6 +46,12 @@ impl std::fmt::Display for LuluError {
             }
             LuluError::InvalidType => {
                 write!(f, "invalid type: type string must not be empty")
+            }
+            LuluError::RecorderStartFailed => {
+                write!(f, "failed to start the embedded recorder")
+            }
+            LuluError::RecorderStopFailed => {
+                write!(f, "failed to stop the recorder or write the output file")
             }
         }
     }
