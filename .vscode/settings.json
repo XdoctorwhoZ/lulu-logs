@@ -4,6 +4,11 @@
         "/^cargo search dioxus-free-icons 2>/dev/null \\| head -5$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "cargo check": true,
+        "cargo test": true,
+        "cargo run": true
+        "git fetch": true,
+        "git rebase": true
     },
 }

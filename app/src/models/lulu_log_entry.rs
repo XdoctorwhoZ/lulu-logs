@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::generated::lulu_logs_generated::lulu_logs::LogLevel as FbsLogLevel;
+use crate::models::span::is_span_type;
 
 // ---------------------------------------------------------------------------
 // LuluLevel
@@ -131,7 +132,8 @@ pub fn decode_data(type_str: &str, data: &[u8]) -> String {
         "bool"   => decode_bool(data),
         "json"   => decode_json(data),
         "bytes"  => decode_bytes(data),
-        "beg_test_scenario" | "end_test_scenario" => decode_json(data),
+        "net_packet" | "serial_chunk" => decode_bytes(data),
+        _ if is_span_type(type_str) => decode_json(data),
         _ => format!("[decode error: unknown type \"{}\"]", type_str),
     }
 }

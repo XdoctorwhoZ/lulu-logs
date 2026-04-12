@@ -19,9 +19,11 @@
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_beg_test_scenario, lulu_end_test_scenario, lulu_init, lulu_is_connected, lulu_publish,
-    lulu_shutdown, lulu_start_pulse, lulu_stats, lulu_stop_pulse, Data, LogLevel, LuluClientConfig,
+    lulu_init, lulu_is_connected, lulu_publish, lulu_scenario_beg, lulu_scenario_end,
+    lulu_shutdown, lulu_span_beg, lulu_span_end, lulu_start_pulse, lulu_stats,
+    lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end, Data, LogLevel, LuluClientConfig,
 };
+use serde_json::json;
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
 
@@ -555,21 +557,107 @@ fn build_scenarios() -> Vec<Scenario> {
             data: Data::Json(r#"{"timestamp":"2024-01-01T12:00:45.123Z","bytes":256,"errors":0,"baudrate":115200}"#.to_string()),
             description: "RX statistics",
         },
+        // ── Network capture ───────────────────────────────────────────────────
+        Scenario {
+            source: "network/eth0",
+            attribute: "rx",
+            level: LogLevel::Debug,
+            // Minimal Ethernet frame header (dst MAC, src MAC, EtherType IPv4)
+            data: Data::NetPacket(vec![
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // dst: broadcast
+                0xD8, 0x3D, 0xC8, 0x00, 0x01, 0x02, // src: d8:3d:c8:00:01:02
+                0x08, 0x00,                           // EtherType: IPv4
+            ]),
+            description: "Ethernet broadcast frame (header only)",
+        },
+        Scenario {
+            source: "network/eth0",
+            attribute: "tx",
+            level: LogLevel::Trace,
+            data: Data::NetPacket(vec![
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, // dst MAC
+                0xD8, 0x3D, 0xC8, 0x00, 0x01, 0x02, // src MAC
+                0x08, 0x00,                           // EtherType: IPv4
+                0x45, 0x00, 0x00, 0x28,               // IP: version/IHL, DSCP, total length 40
+                0x00, 0x01, 0x00, 0x00,               // IP: identification, flags, fragment offset
+                0x40, 0x11, 0x00, 0x00,               // IP: TTL=64, proto=UDP, checksum placeholder
+                0xC0, 0xA8, 0x01, 0x01,               // IP src: 192.168.1.1
+                0xC0, 0xA8, 0x01, 0x02,               // IP dst: 192.168.1.2
+            ]),
+            description: "IPv4/UDP packet (header)",
+        },
+        // ── Serial link chunks ────────────────────────────────────────────────
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "rx",
+            level: LogLevel::Debug,
+            data: Data::SerialChunk(b"AT+GMR\r\n".to_vec()),
+            description: "AT command received on UART-1",
+        },
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "tx",
+            level: LogLevel::Debug,
+            data: Data::SerialChunk(b"AT+GMR\r\nOK\r\n".to_vec()),
+            description: "AT response sent on UART-1",
+        },
+        Scenario {
+            source: "serial/uart-1",
+            attribute: "rx",
+            level: LogLevel::Info,
+            // Binary frame with non-printable bytes (e.g. a Modbus RTU response)
+            data: Data::SerialChunk(vec![0x01, 0x03, 0x02, 0x00, 0x17, 0xF8, 0x4A]),
+            description: "Modbus RTU response on UART-1",
+        },
     ]
 }
 
-/// Injects test scenarios using the dedicated `beg_test_scenario` / `end_test_scenario`
-/// convenience helpers. This demonstrates the lulu-logs v1.1.0 §3.4 test lifecycle.
+/// Injects scenario and span examples using the dedicated lifecycle helpers.
 fn inject_test_scenarios() {
-    println!("─── Test Scenarios (lulu-logs v1.1.0 §3.4) ──────────");
+    println!("─── Spans and Scenarios (lulu-logs v1.3.0 §3.4) ──────");
+
+    // ── Generic span: calibration window ─────────────────────────────────
+    let generic_source = "calibration/station-a";
+    let generic_attr = "span";
+    let generic_id = "span-calibration-001";
+
+    print_scenario_step("BEG", generic_source, generic_attr, "generic span calibration-window");
+    let generic_metadata = json!({"operator":"alice","batch":"2026-03-a"});
+    let _ = lulu_span_beg(
+        generic_source,
+        generic_attr,
+        generic_id,
+        Some("calibration-window"),
+        "calibration",
+        Some(&generic_metadata),
+    );
+    std::thread::sleep(Duration::from_millis(10));
+
+    let generic_result = json!({"calibrated_channels": 4});
+    print_scenario_step("END", generic_source, generic_attr, "generic span calibration-window → SUCCESS");
+    let _ = lulu_span_end(
+        generic_source,
+        generic_attr,
+        generic_id,
+        Some("calibration-window"),
+        "calibration",
+        true,
+        None,
+        Some(84),
+        Some(&generic_metadata),
+        Some(&generic_result),
+    );
+    std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 1: passing test ──────────────────────────────────────────
     let source = "psu/channel-1";
     let attr = "scenario";
     let name = "voltage-regulation-3v3";
+    let span_id = "scenario-voltage-regulation-3v3";
 
     print_scenario_step("BEG", source, attr, name);
-    let _ = lulu_beg_test_scenario(source, attr, name);
+    let scenario_metadata = json!({"target_voltage": 3.3, "tolerance_v": 0.05});
+    let _ = lulu_scenario_beg(source, attr, span_id, name, Some(&scenario_metadata));
     std::thread::sleep(Duration::from_millis(10));
 
     // Some normal logs in between (these belong to the scenario)
@@ -582,14 +670,27 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(10));
 
     print_scenario_step("END", source, attr, &format!("{} → SUCCESS", name));
-    let _ = lulu_end_test_scenario(source, attr, name, true, None);
+    let scenario_result = json!({"measured_min": 3.30, "measured_max": 3.31});
+    let _ = lulu_scenario_end(
+        source,
+        attr,
+        span_id,
+        name,
+        true,
+        None,
+        Some(24),
+        Some(&scenario_metadata),
+        Some(&scenario_result),
+    );
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 2: failing test ──────────────────────────────────────────
     let name2 = "overcurrent-protection";
+    let span_id2 = "scenario-overcurrent-protection";
 
     print_scenario_step("BEG", source, attr, name2);
-    let _ = lulu_beg_test_scenario(source, attr, name2);
+    let scenario2_metadata = json!({"current_limit_a": 1.0, "trip_timeout_ms": 100});
+    let _ = lulu_scenario_beg(source, attr, span_id2, name2, Some(&scenario2_metadata));
     std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(source, "current", LogLevel::Info, Data::Float32(0.45));
@@ -605,21 +706,28 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(10));
 
     print_scenario_step("END", source, attr, &format!("{} → FAIL", name2));
-    let _ = lulu_end_test_scenario(
+    let scenario2_result = json!({"peak_current_a": 1.05, "protection_triggered": false});
+    let _ = lulu_scenario_end(
         source,
         attr,
+        span_id2,
         name2,
         false,
         Some("Current reached 1.05A, protection did not trigger within 100ms"),
+        Some(31),
+        Some(&scenario2_metadata),
+        Some(&scenario2_result),
     );
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 3: in-progress (no end) ──────────────────────────────────
     let source3 = "oscilloscope/probe-a";
     let name3 = "signal-integrity-check";
+    let span_id3 = "scenario-signal-integrity-check";
 
     print_scenario_step("BEG", source3, attr, name3);
-    let _ = lulu_beg_test_scenario(source3, attr, name3);
+    let scenario3_metadata = json!({"expected_frequency_hz": 1_000_000});
+    let _ = lulu_scenario_beg(source3, attr, span_id3, name3, Some(&scenario3_metadata));
     std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(
@@ -632,6 +740,61 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(10));
 
     println!("      ↳ (scenario left open — in progress)");
+    println!("────────────────────────────────────────────────────────");
+
+    // ── Tool call spans ───────────────────────────────────────────────────
+    let tool_source = "agent/copilot";
+    let tool_attr = "tool-call";
+    let tool_id_ok = "tool-call-read-file-001";
+    let tool_metadata_ok = json!({
+        "tool_name": "read_file",
+        "agent_name": "Copilot",
+        "arguments": {"path": "README.md"}
+    });
+
+    print_scenario_step("BEG", tool_source, tool_attr, "tool call read_file");
+    let _ = lulu_tool_call_beg(tool_source, tool_attr, tool_id_ok, "read_file", Some(&tool_metadata_ok));
+    std::thread::sleep(Duration::from_millis(10));
+
+    let tool_result_ok = json!({"status": "ok", "bytes_read": 2048});
+    print_scenario_step("END", tool_source, tool_attr, "tool call read_file → SUCCESS");
+    let _ = lulu_tool_call_end(
+        tool_source,
+        tool_attr,
+        tool_id_ok,
+        "read_file",
+        true,
+        None,
+        Some(12),
+        Some(&tool_metadata_ok),
+        Some(&tool_result_ok),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    let tool_id_fail = "tool-call-run-command-002";
+    let tool_metadata_fail = json!({
+        "tool_name": "run_in_terminal",
+        "agent_name": "Copilot",
+        "arguments": {"command": "cargo test"}
+    });
+
+    print_scenario_step("BEG", tool_source, tool_attr, "tool call run_in_terminal");
+    let _ = lulu_tool_call_beg(tool_source, tool_attr, tool_id_fail, "run_in_terminal", Some(&tool_metadata_fail));
+    std::thread::sleep(Duration::from_millis(10));
+
+    let tool_result_fail = json!({"exit_code": 101, "stderr_lines": 7});
+    print_scenario_step("END", tool_source, tool_attr, "tool call run_in_terminal → FAIL");
+    let _ = lulu_tool_call_end(
+        tool_source,
+        tool_attr,
+        tool_id_fail,
+        "run_in_terminal",
+        false,
+        Some("cargo test failed with compilation errors"),
+        Some(127),
+        Some(&tool_metadata_fail),
+        Some(&tool_result_fail),
+    );
     println!("────────────────────────────────────────────────────────");
 }
 
@@ -664,6 +827,8 @@ fn main() {
         queue_capacity: 256,
         // MQTT keep-alive interval in seconds.
         keep_alive_secs: 5,
+        // Enable coloured test-scenario output on the terminal.
+        terminal_logger: true,
     };
 
     if let Err(e) = lulu_init(config) {
@@ -727,10 +892,10 @@ fn main() {
 
     println!();
 
-    // ── Step 2b: inject test scenarios (beg/end lifecycle) ────────────────────
+    // ── Step 2b: inject spans (generic, scenario, tool-call) ──────────────────
     //
-    // Uses lulu_beg_test_scenario() / lulu_end_test_scenario() convenience
-    // helpers to demonstrate the lulu-logs v1.1.0 §3.4 test scenario types.
+    // Uses lulu_span_*(), lulu_scenario_*(), and lulu_tool_call_*() convenience
+    // helpers to demonstrate the lulu-logs v1.3.0 span lifecycle types.
     inject_test_scenarios();
 
     println!();

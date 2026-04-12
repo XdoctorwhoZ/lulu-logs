@@ -35,10 +35,11 @@ pub fn ScenarioPanel() -> Element {
                 } else {
                     for sc in scenarios.iter().rev() {
                         {
+                            let sc_span_id = sc.span_id.clone();
                             let sc_name = sc.name.clone();
                             let sc_source = sc.source.clone();
                             let is_selected = selected.as_ref()
-                                .is_some_and(|(n, s)| n == &sc_name && s == &sc_source);
+                                .is_some_and(|(span_id, s)| span_id == &sc_span_id && s == &sc_source);
                             let item_class = if is_selected {
                                 "scenario-item selected"
                             } else {
@@ -52,14 +53,14 @@ pub fn ScenarioPanel() -> Element {
                                 div {
                                     class: "{item_class}",
                                     onclick: {
-                                        let name = sc_name.clone();
+                                        let span_id = sc_span_id.clone();
                                         let source = sc_source.clone();
                                         move |_| {
                                             let current = state.selected_scenario.read().clone();
-                                            if current.as_ref().is_some_and(|(n, s)| n == &name && s == &source) {
+                                            if current.as_ref().is_some_and(|(selected_id, s)| selected_id == &span_id && s == &source) {
                                                 state.selected_scenario.set(None);
                                             } else {
-                                                state.selected_scenario.set(Some((name.clone(), source.clone())));
+                                                state.selected_scenario.set(Some((span_id.clone(), source.clone())));
                                             }
                                         }
                                     },
