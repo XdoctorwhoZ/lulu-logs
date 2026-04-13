@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 use crate::app::AppState;
 use crate::models::lens_pin::LensPinData;
-use crate::models::{is_span_type, parse_span_event};
+use crate::models::{is_span_type, is_step_type, parse_span_event};
 use crate::models::test_scenario::ScenarioStatus;
 use crate::models::LuluLogEntry;
 
@@ -38,7 +38,7 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
         .is_some_and(|scenario| scenario.end_log_index == Some(log_index));
 
     // Detect if this entry is a step (vs a scenario)
-    let is_step_entry = entry.data_type == "step_beg" || entry.data_type == "step_end";
+    let is_step_entry = is_step_type(&entry.data_type);
 
     // Determine scenario-specific CSS class
     let scenario_class = if is_beg {

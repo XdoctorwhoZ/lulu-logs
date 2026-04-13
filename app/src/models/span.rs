@@ -47,6 +47,10 @@ pub fn is_span_begin_type(type_str: &str) -> bool {
     matches!(type_str, "span_beg" | "scenario_beg" | "tool_call_beg" | "step_beg")
 }
 
+pub fn is_step_type(type_str: &str) -> bool {
+    matches!(type_str, "step_beg" | "step_end")
+}
+
 fn implied_kind(type_str: &str) -> Option<&'static str> {
     match type_str {
         "scenario_beg" | "scenario_end" => Some("scenario"),
