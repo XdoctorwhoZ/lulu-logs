@@ -472,7 +472,7 @@ async fn spawn_mqtt_listener(mut state: AppState) {
 
                 // Step 5 — Project scenario spans into scenario state.
                 if let Some(span) = parse_span_event(&data_type, &data_bytes) {
-                    if span.is_scenario() {
+                    if span.is_scenario() || span.is_step() {
                         let scenario_name = span.name.unwrap_or_else(|| span.span_id.clone());
 
                         match span.phase {

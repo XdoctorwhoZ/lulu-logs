@@ -718,6 +718,41 @@ body {
     color: white;
 }
 
+/* ==== Step-aware log items ==== */
+
+.log-item.step-beg {
+    background: rgba(0, 188, 212, 0.10);
+    border-left: 3px solid #00bcd4;
+    padding-left: 16px;
+}
+
+.log-item.step-end-success {
+    background: rgba(78, 201, 176, 0.08);
+    border-left: 3px solid #4ec9b0;
+    padding-left: 16px;
+}
+
+.log-item.step-end-fail {
+    background: rgba(244, 71, 71, 0.08);
+    border-left: 3px solid #f44747;
+    padding-left: 16px;
+}
+
+.scenario-tag-step-beg {
+    background: #00bcd4;
+    color: white;
+}
+
+.scenario-tag-step-end-success {
+    background: #4ec9b0;
+    color: #1e1e1e;
+}
+
+.scenario-tag-step-end-fail {
+    background: #f44747;
+    color: white;
+}
+
 .scenario-name-display {
     color: #ce9178;
     font-weight: 600;

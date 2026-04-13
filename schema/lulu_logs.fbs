@@ -36,7 +36,8 @@ table LogEntry {
   //               "net_packet", "serial_chunk",
   //               "span_beg", "span_end",
   //               "scenario_beg", "scenario_end",
-  //               "tool_call_beg", "tool_call_end".
+  //               "tool_call_beg", "tool_call_end",
+  //               "step_beg", "step_end".
   type: string (required);
 
   // The actual data value as a raw binary buffer.

@@ -205,6 +205,24 @@ Ces deux types sont des dérivés spécialisés du contrat span pour tracer le d
 { "span_id": "tool-call-read-file-001", "name": "read_file", "success": true, "duration_ms": 12, "metadata": { "agent_name": "Copilot" }, "result": { "status": "ok", "bytes_read": 2048 } }
 ```
 
+#### `"step_beg"` et `"step_end"`
+
+Ces deux types sont des dérivés spécialisés du contrat span pour tracer les étapes individuelles au sein d'un scénario de test. Ils permettent un suivi plus granulaire que `scenario_beg`/`scenario_end`.
+
+- `kind` est implicite et vaut `"step"`.
+- `span_id` reste obligatoire et devient la clé de corrélation canonique.
+- `name` contient le nom lisible de l'étape.
+
+**Exemple `step_beg`** :
+```json
+{ "span_id": "step-measure-voltage-001", "name": "measure-voltage", "metadata": { "channel": 1, "expected_v": 3.3 } }
+```
+
+**Exemple `step_end`** :
+```json
+{ "span_id": "step-measure-voltage-001", "name": "measure-voltage", "success": true, "duration_ms": 5, "result": { "measured_v": 3.31 } }
+```
+
 ### 3.5 Types binaires spécialisés — `net_packet` et `serial_chunk`
 
 Ces deux types raffinent le type générique `"bytes"` pour les cas d'usage réseau et liaison série. Le champ `data` contient des octets bruts opaques, sans en-tête ni encapsulation supplémentaire ajoutée par le protocole `lulu-logs`.

@@ -23,6 +23,10 @@ impl SpanEvent {
     pub fn is_scenario(&self) -> bool {
         self.kind == "scenario"
     }
+
+    pub fn is_step(&self) -> bool {
+        self.kind == "step"
+    }
 }
 
 pub fn is_span_type(type_str: &str) -> bool {
@@ -34,17 +38,20 @@ pub fn is_span_type(type_str: &str) -> bool {
             | "scenario_end"
             | "tool_call_beg"
             | "tool_call_end"
+            | "step_beg"
+            | "step_end"
     )
 }
 
 pub fn is_span_begin_type(type_str: &str) -> bool {
-    matches!(type_str, "span_beg" | "scenario_beg" | "tool_call_beg")
+    matches!(type_str, "span_beg" | "scenario_beg" | "tool_call_beg" | "step_beg")
 }
 
 fn implied_kind(type_str: &str) -> Option<&'static str> {
     match type_str {
         "scenario_beg" | "scenario_end" => Some("scenario"),
         "tool_call_beg" | "tool_call_end" => Some("tool_call"),
+        "step_beg" | "step_end" => Some("step"),
         _ => None,
     }
 }

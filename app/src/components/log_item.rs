@@ -37,17 +37,20 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
         .as_ref()
         .is_some_and(|scenario| scenario.end_log_index == Some(log_index));
 
+    // Detect if this entry is a step (vs a scenario)
+    let is_step_entry = entry.data_type == "step_beg" || entry.data_type == "step_end";
+
     // Determine scenario-specific CSS class
     let scenario_class = if is_beg {
-        " scenario-beg"
+        if is_step_entry { " step-beg" } else { " scenario-beg" }
     } else if is_end {
         if scenario_snapshot
             .as_ref()
             .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
         {
-            " scenario-end-success"
+            if is_step_entry { " step-end-success" } else { " scenario-end-success" }
         } else {
-            " scenario-end-fail"
+            if is_step_entry { " step-end-fail" } else { " scenario-end-fail" }
         }
     } else {
         // Check if this log is inside an active scenario
@@ -99,17 +102,32 @@ pub fn LogItem(entry: LuluLogEntry, log_index: usize) -> Element {
             span { class: "log-attribute", "{entry.attribute}" }
             span { class: "log-level {level_class}", "{entry.level}" }
 
-            // Scenario tag or data type
+            // Scenario/Step tag or data type
             if is_beg {
-                span { class: "scenario-tag scenario-tag-beg", "BEGIN" }
-            } else if is_end {
-                if scenario_snapshot
-                    .as_ref()
-                    .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
-                {
-                    span { class: "scenario-tag scenario-tag-end-success", "END ✅" }
+                if is_step_entry {
+                    span { class: "scenario-tag scenario-tag-step-beg", "STEP" }
                 } else {
-                    span { class: "scenario-tag scenario-tag-end-fail", "END ❌" }
+                    span { class: "scenario-tag scenario-tag-beg", "BEGIN" }
+                }
+            } else if is_end {
+                if is_step_entry {
+                    if scenario_snapshot
+                        .as_ref()
+                        .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
+                    {
+                        span { class: "scenario-tag scenario-tag-step-end-success", "STEP ✅" }
+                    } else {
+                        span { class: "scenario-tag scenario-tag-step-end-fail", "STEP ❌" }
+                    }
+                } else {
+                    if scenario_snapshot
+                        .as_ref()
+                        .is_some_and(|scenario| matches!(scenario.status, ScenarioStatus::Success))
+                    {
+                        span { class: "scenario-tag scenario-tag-end-success", "END ✅" }
+                    } else {
+                        span { class: "scenario-tag scenario-tag-end-fail", "END ❌" }
+                    }
                 }
             } else {
                 span { class: "log-data-type", "{entry.data_type}" }
