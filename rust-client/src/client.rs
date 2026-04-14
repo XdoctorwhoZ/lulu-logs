@@ -19,7 +19,7 @@ use crate::topic;
 
 /// Configuration for the MQTT connection used by `lulu_init()`.
 #[derive(Debug, Clone)]
-pub struct LuluClientConfig {
+pub struct LuluConfig {
     /// MQTT broker hostname or IP address.
     pub broker_host: String,
     /// MQTT broker TCP port.
@@ -36,7 +36,7 @@ pub struct LuluClientConfig {
     pub terminal_logger: bool,
 }
 
-impl Default for LuluClientConfig {
+impl Default for LuluConfig {
     fn default() -> Self {
         Self {
             broker_host: "127.0.0.1".to_string(),
@@ -84,7 +84,7 @@ pub(crate) struct LuluClient {
 
 impl LuluClient {
     /// Starts the MQTT connection and background workers.
-    pub(crate) async fn start(config: LuluClientConfig) -> anyhow::Result<Self> {
+    pub(crate) async fn start(config: LuluConfig) -> anyhow::Result<Self> {
         let client_id = format!("{}-{}", config.client_id_prefix, generate_random_string(6));
 
         let (sender, receiver) = mpsc::channel::<PendingMessage>(config.queue_capacity);
@@ -94,11 +94,7 @@ impl LuluClient {
         let reconnections = Arc::new(AtomicU32::new(0));
         let connected = Arc::new(AtomicBool::new(false));
 
-        let mut mqtt_options = MqttOptions::new(
-            client_id,
-            &config.broker_host,
-            config.broker_port,
-        );
+        let mut mqtt_options = MqttOptions::new(client_id, &config.broker_host, config.broker_port);
         mqtt_options.set_keep_alive(std::time::Duration::from_secs(config.keep_alive_secs));
 
         let (async_client, event_loop) = AsyncClient::new(mqtt_options, 100);
@@ -173,7 +169,7 @@ impl LuluClient {
                     .to_string();
                 let payload = match &version {
                     Some(v) => serde_json::json!({"timestamp": ts, "version": v}).to_string(),
-                    None    => serde_json::json!({"timestamp": ts}).to_string(),
+                    None => serde_json::json!({"timestamp": ts}).to_string(),
                 };
                 if let Err(e) = mqtt
                     .publish(&pulse_topic, QoS::AtMostOnce, false, payload.into_bytes())
@@ -184,7 +180,12 @@ impl LuluClient {
             }
         });
         // Replace any existing handle for this source (aborting the old task)
-        if let Some(old) = self.pulse_handles.lock().unwrap().insert(source, handle.abort_handle()) {
+        if let Some(old) = self
+            .pulse_handles
+            .lock()
+            .unwrap()
+            .insert(source, handle.abort_handle())
+        {
             old.abort();
         }
     }
