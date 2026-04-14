@@ -314,55 +314,50 @@ All active pulses are stopped automatically by `lulu_shutdown()`.
 
 Test scenarios provide structured begin/end markers that the UI groups into collapsible test run summaries.
 
-### Begin a scenario
+`lulu_scenario_beg` returns a `ScenarioHandle` that captures the scenario name. Call `.end()` on the handle to publish the closing entry. Dropping the handle without calling `.end()` leaves the scenario in-progress (useful for pending/interrupted tests).
+
+### Begin a scenario and end with success
 
 ```rust
-use lulu_logs_client::lulu_beg_test_scenario;
+use lulu_logs_client::lulu_scenario_beg;
 
-lulu_beg_test_scenario("session/run-001", "control", "voltage-regulation-3v3")?;
+let scenario = lulu_scenario_beg("voltage-regulation-3v3")?;
+// … run the test …
+scenario.end(true, None)?;
 ```
 
-This publishes on topic `lulu/session/run-001/control` with:
+Source is always `"test"`, attribute is always `"scenario"`. The `span_id` is derived as `"scenario-{name}"`.
 
-```json
-{"name": "voltage-regulation-3v3"}
-```
-
-level: `Info`, type: `beg_test_scenario`.
-
-### End a scenario – success
+### End a scenario with failure
 
 ```rust
-use lulu_logs_client::lulu_end_test_scenario;
-
-lulu_end_test_scenario("session/run-001", "control", "voltage-regulation-3v3", true, None)?;
+let scenario = lulu_scenario_beg("overcurrent-protection")?;
+// … run the test …
+scenario.end(false, Some("current limit not triggered at 2.1 A"))?;
 ```
 
-Payload:
-```json
-{"name": "voltage-regulation-3v3", "success": true}
-```
+level: `Error` when `success` is `false`.
 
-level: `Info`.
-
-### End a scenario – failure
+### Leave a scenario in-progress
 
 ```rust
-lulu_end_test_scenario(
-    "session/run-001",
-    "control",
-    "overcurrent-protection",
-    false,
-    Some("current limit not triggered at 2.1 A"),
-)?;
+let _scenario = lulu_scenario_beg("signal-integrity-check")?;
+// handle dropped without .end() — scenario stays open
 ```
 
-Payload:
-```json
-{"name": "overcurrent-protection", "success": false, "error": "current limit not triggered at 2.1 A"}
+### Step handles
+
+`lulu_step_beg` returns a `StepHandle` that works the same way:
+
+```rust
+use lulu_logs_client::lulu_step_beg;
+
+let step = lulu_step_beg("test", "scenario", "step-set-voltage-001", "set-voltage", None)?;
+// … perform step …
+step.end(true, None, Some(42), None, None)?;
 ```
 
-level: `Error`.
+`StepHandle::end` signature: `end(self, success, error, duration_ms, metadata, result)`.
 
 ### Using `lulu_publish` directly
 
@@ -370,10 +365,10 @@ The helpers above are thin wrappers. Equivalent manual call for begin:
 
 ```rust
 lulu_publish(
-    "session/run-001",
-    "control",
+    "test",
+    "scenario",
     LogLevel::Info,
-    Data::BegTestScenario(r#"{"name":"voltage-regulation-3v3"}"#.into()),
+    Data::ScenarioBeg(r#"{"span_id":"scenario-voltage-regulation-3v3","name":"voltage-regulation-3v3"}"#.into()),
 )?;
 ```
 
@@ -447,7 +442,7 @@ Returns `None` if `lulu_init()` has not been called.
 ```rust
 use lulu_logs_client::{
     lulu_init, lulu_publish, lulu_start_pulse, lulu_stop_pulse,
-    lulu_beg_test_scenario, lulu_end_test_scenario,
+    lulu_scenario_beg,
     lulu_stats, lulu_shutdown,
     Data, LogLevel, LuluClientConfig,
 };
@@ -470,14 +465,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Data::Json(r#"{"mode":"CV","setpoint":3.3,"actual":3.295}"#.into()))?;
     lulu_publish("bench/psu", "raw-frame", LogLevel::Trace, Data::Bytes(vec![0x02, 0x41, 0x03]))?;
 
-    // 4. Simulate a test scenario
-    lulu_beg_test_scenario("bench/psu", "ctrl", "output-accuracy")?;
+    // 4. Simulate a test scenario using the handle pattern
+    let scenario = lulu_scenario_beg("output-accuracy")?;
 
     let measured = 3.295_f32;
     let ok = (measured - 3.3).abs() < 0.05;
 
-    lulu_end_test_scenario(
-        "bench/psu", "ctrl", "output-accuracy",
+    scenario.end(
         ok,
         if ok { None } else { Some("Voltage out of ±50 mV tolerance") },
     )?;

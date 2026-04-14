@@ -19,10 +19,9 @@
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_is_connected, lulu_publish, lulu_scenario_beg, lulu_scenario_end,
-    lulu_shutdown, lulu_span_beg, lulu_span_end, lulu_start_pulse, lulu_stats,
-    lulu_step_beg, lulu_step_end, lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end,
-    Data, LogLevel, LuluClientConfig,
+    lulu_init, lulu_is_connected, lulu_publish, lulu_scenario_beg, lulu_shutdown, lulu_span_beg,
+    lulu_span_end, lulu_start_pulse, lulu_stats, lulu_step_beg, lulu_stop_pulse,
+    lulu_tool_call_beg, lulu_tool_call_end, Data, LogLevel, LuluConfig,
 };
 use serde_json::json;
 
@@ -622,7 +621,12 @@ fn inject_test_scenarios() {
     let generic_attr = "span";
     let generic_id = "span-calibration-001";
 
-    print_scenario_step("BEG", generic_source, generic_attr, "generic span calibration-window");
+    print_scenario_step(
+        "BEG",
+        generic_source,
+        generic_attr,
+        "generic span calibration-window",
+    );
     let generic_metadata = json!({"operator":"alice","batch":"2026-03-a"});
     let _ = lulu_span_beg(
         generic_source,
@@ -635,7 +639,12 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(10));
 
     let generic_result = json!({"calibrated_channels": 4});
-    print_scenario_step("END", generic_source, generic_attr, "generic span calibration-window → SUCCESS");
+    print_scenario_step(
+        "END",
+        generic_source,
+        generic_attr,
+        "generic span calibration-window → SUCCESS",
+    );
     let _ = lulu_span_end(
         generic_source,
         generic_attr,
@@ -651,88 +660,85 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 1: passing test ──────────────────────────────────────────
-    let source = "psu/channel-1";
-    let attr = "scenario";
     let name = "voltage-regulation-3v3";
-    let span_id = "scenario-voltage-regulation-3v3";
 
-    print_scenario_step("BEG", source, attr, name);
-    let scenario_metadata = json!({"target_voltage": 3.3, "tolerance_v": 0.05});
-    let _ = lulu_scenario_beg(source, attr, span_id, name, Some(&scenario_metadata));
+    print_scenario_step("BEG", "test", "scenario", name);
+    let scenario1 = lulu_scenario_beg(name).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     // Some normal logs in between (these belong to the scenario)
-    let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.30));
+    let _ = lulu_publish(
+        "psu/channel-1",
+        "voltage",
+        LogLevel::Info,
+        Data::Float32(3.30),
+    );
     println!("      ↳ psu/channel-1/voltage = 3.30 (float32)");
     std::thread::sleep(Duration::from_millis(10));
 
-    let _ = lulu_publish(source, "voltage", LogLevel::Info, Data::Float32(3.31));
+    let _ = lulu_publish(
+        "psu/channel-1",
+        "voltage",
+        LogLevel::Info,
+        Data::Float32(3.31),
+    );
     println!("      ↳ psu/channel-1/voltage = 3.31 (float32)");
     std::thread::sleep(Duration::from_millis(10));
 
-    print_scenario_step("END", source, attr, &format!("{} → SUCCESS", name));
-    let scenario_result = json!({"measured_min": 3.30, "measured_max": 3.31});
-    let _ = lulu_scenario_end(
-        source,
-        attr,
-        span_id,
-        name,
-        true,
-        None,
-        Some(24),
-        Some(&scenario_metadata),
-        Some(&scenario_result),
-    );
+    print_scenario_step("END", "test", "scenario", &format!("{} → SUCCESS", name));
+    let _ = scenario1.end(true, None);
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 2: failing test ──────────────────────────────────────────
     let name2 = "overcurrent-protection";
-    let span_id2 = "scenario-overcurrent-protection";
 
-    print_scenario_step("BEG", source, attr, name2);
-    let scenario2_metadata = json!({"current_limit_a": 1.0, "trip_timeout_ms": 100});
-    let _ = lulu_scenario_beg(source, attr, span_id2, name2, Some(&scenario2_metadata));
+    print_scenario_step("BEG", "test", "scenario", name2);
+    let scenario2 = lulu_scenario_beg(name2).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
-    let _ = lulu_publish(source, "current", LogLevel::Info, Data::Float32(0.45));
+    let _ = lulu_publish(
+        "psu/channel-1",
+        "current",
+        LogLevel::Info,
+        Data::Float32(0.45),
+    );
     println!("      ↳ psu/channel-1/current = 0.45 (float32)");
     std::thread::sleep(Duration::from_millis(10));
 
-    let _ = lulu_publish(source, "current", LogLevel::Warn, Data::Float32(0.98));
+    let _ = lulu_publish(
+        "psu/channel-1",
+        "current",
+        LogLevel::Warn,
+        Data::Float32(0.98),
+    );
     println!("      ↳ psu/channel-1/current = 0.98 (float32) [warn]");
     std::thread::sleep(Duration::from_millis(10));
 
-    let _ = lulu_publish(source, "current", LogLevel::Error, Data::Float32(1.05));
+    let _ = lulu_publish(
+        "psu/channel-1",
+        "current",
+        LogLevel::Error,
+        Data::Float32(1.05),
+    );
     println!("      ↳ psu/channel-1/current = 1.05 (float32) [error]");
     std::thread::sleep(Duration::from_millis(10));
 
-    print_scenario_step("END", source, attr, &format!("{} → FAIL", name2));
-    let scenario2_result = json!({"peak_current_a": 1.05, "protection_triggered": false});
-    let _ = lulu_scenario_end(
-        source,
-        attr,
-        span_id2,
-        name2,
+    print_scenario_step("END", "test", "scenario", &format!("{} → FAIL", name2));
+    let _ = scenario2.end(
         false,
         Some("Current reached 1.05A, protection did not trigger within 100ms"),
-        Some(31),
-        Some(&scenario2_metadata),
-        Some(&scenario2_result),
     );
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 3: in-progress (no end) ──────────────────────────────────
-    let source3 = "oscilloscope/probe-a";
     let name3 = "signal-integrity-check";
-    let span_id3 = "scenario-signal-integrity-check";
 
-    print_scenario_step("BEG", source3, attr, name3);
-    let scenario3_metadata = json!({"expected_frequency_hz": 1_000_000});
-    let _ = lulu_scenario_beg(source3, attr, span_id3, name3, Some(&scenario3_metadata));
+    print_scenario_step("BEG", "test", "scenario", name3);
+    let _scenario3 = lulu_scenario_beg(name3).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(
-        source3,
+        "oscilloscope/probe-a",
         "frequency",
         LogLevel::Info,
         Data::Float64(1_000_000.0),
@@ -754,11 +760,22 @@ fn inject_test_scenarios() {
     });
 
     print_scenario_step("BEG", tool_source, tool_attr, "tool call read_file");
-    let _ = lulu_tool_call_beg(tool_source, tool_attr, tool_id_ok, "read_file", Some(&tool_metadata_ok));
+    let _ = lulu_tool_call_beg(
+        tool_source,
+        tool_attr,
+        tool_id_ok,
+        "read_file",
+        Some(&tool_metadata_ok),
+    );
     std::thread::sleep(Duration::from_millis(10));
 
     let tool_result_ok = json!({"status": "ok", "bytes_read": 2048});
-    print_scenario_step("END", tool_source, tool_attr, "tool call read_file → SUCCESS");
+    print_scenario_step(
+        "END",
+        tool_source,
+        tool_attr,
+        "tool call read_file → SUCCESS",
+    );
     let _ = lulu_tool_call_end(
         tool_source,
         tool_attr,
@@ -780,11 +797,22 @@ fn inject_test_scenarios() {
     });
 
     print_scenario_step("BEG", tool_source, tool_attr, "tool call run_in_terminal");
-    let _ = lulu_tool_call_beg(tool_source, tool_attr, tool_id_fail, "run_in_terminal", Some(&tool_metadata_fail));
+    let _ = lulu_tool_call_beg(
+        tool_source,
+        tool_attr,
+        tool_id_fail,
+        "run_in_terminal",
+        Some(&tool_metadata_fail),
+    );
     std::thread::sleep(Duration::from_millis(10));
 
     let tool_result_fail = json!({"exit_code": 101, "stderr_lines": 7});
-    print_scenario_step("END", tool_source, tool_attr, "tool call run_in_terminal → FAIL");
+    print_scenario_step(
+        "END",
+        tool_source,
+        tool_attr,
+        "tool call run_in_terminal → FAIL",
+    );
     let _ = lulu_tool_call_end(
         tool_source,
         tool_attr,
@@ -803,21 +831,33 @@ fn inject_test_scenarios() {
     let step_attr = "step";
 
     // Step 1: passing step
-    let step_id_ok = "step-measure-voltage-001";
     let step_name_ok = "measure-voltage";
     let step_metadata_ok = json!({"channel": 1, "expected_v": 3.3});
 
-    print_scenario_step("BEG", step_source, step_attr, &format!("step {}", step_name_ok));
-    let _ = lulu_step_beg(step_source, step_attr, step_id_ok, step_name_ok, Some(&step_metadata_ok));
+    print_scenario_step(
+        "BEG",
+        step_source,
+        step_attr,
+        &format!("step {}", step_name_ok),
+    );
+    let step_ok = lulu_step_beg(
+        step_source,
+        step_attr,
+        "step-measure-voltage-001",
+        step_name_ok,
+        Some(&step_metadata_ok),
+    )
+    .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_ok = json!({"measured_v": 3.31});
-    print_scenario_step("END", step_source, step_attr, &format!("step {} → SUCCESS", step_name_ok));
-    let _ = lulu_step_end(
+    print_scenario_step(
+        "END",
         step_source,
         step_attr,
-        step_id_ok,
-        step_name_ok,
+        &format!("step {} → SUCCESS", step_name_ok),
+    );
+    let _ = step_ok.end(
         true,
         None,
         Some(5),
@@ -827,21 +867,33 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(300));
 
     // Step 2: failing step
-    let step_id_fail = "step-check-ripple-002";
     let step_name_fail = "check-ripple";
     let step_metadata_fail = json!({"channel": 1, "max_ripple_mv": 50});
 
-    print_scenario_step("BEG", step_source, step_attr, &format!("step {}", step_name_fail));
-    let _ = lulu_step_beg(step_source, step_attr, step_id_fail, step_name_fail, Some(&step_metadata_fail));
+    print_scenario_step(
+        "BEG",
+        step_source,
+        step_attr,
+        &format!("step {}", step_name_fail),
+    );
+    let step_fail = lulu_step_beg(
+        step_source,
+        step_attr,
+        "step-check-ripple-002",
+        step_name_fail,
+        Some(&step_metadata_fail),
+    )
+    .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_fail = json!({"measured_ripple_mv": 72});
-    print_scenario_step("END", step_source, step_attr, &format!("step {} → FAIL", step_name_fail));
-    let _ = lulu_step_end(
+    print_scenario_step(
+        "END",
         step_source,
         step_attr,
-        step_id_fail,
-        step_name_fail,
+        &format!("step {} → FAIL", step_name_fail),
+    );
+    let _ = step_fail.end(
         false,
         Some("Ripple 72mV exceeds 50mV limit"),
         Some(8),
@@ -870,7 +922,7 @@ fn main() {
     // It spawns a dedicated background Tokio runtime and establishes the MQTT
     // connection. The call blocks until the internal state is ready but does
     // NOT wait for the MQTT handshake to complete.
-    let config = LuluClientConfig {
+    let config = LuluConfig {
         broker_host: args.broker_host,
         broker_port: args.broker_port,
         // Prefix used to build the MQTT client ID (a random suffix is appended
