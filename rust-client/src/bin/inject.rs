@@ -21,7 +21,8 @@ use std::time::Duration;
 use lulu_logs_client::{
     lulu_init, lulu_is_connected, lulu_publish, lulu_scenario_beg, lulu_scenario_end,
     lulu_shutdown, lulu_span_beg, lulu_span_end, lulu_start_pulse, lulu_stats,
-    lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end, Data, LogLevel, LuluClientConfig,
+    lulu_step_beg, lulu_step_end, lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end,
+    Data, LogLevel, LuluClientConfig,
 };
 use serde_json::json;
 
@@ -794,6 +795,58 @@ fn inject_test_scenarios() {
         Some(127),
         Some(&tool_metadata_fail),
         Some(&tool_result_fail),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    // ── Step spans ────────────────────────────────────────────────────────
+    let step_source = "psu/channel-1";
+    let step_attr = "step";
+
+    // Step 1: passing step
+    let step_id_ok = "step-measure-voltage-001";
+    let step_name_ok = "measure-voltage";
+    let step_metadata_ok = json!({"channel": 1, "expected_v": 3.3});
+
+    print_scenario_step("BEG", step_source, step_attr, &format!("step {}", step_name_ok));
+    let _ = lulu_step_beg(step_source, step_attr, step_id_ok, step_name_ok, Some(&step_metadata_ok));
+    std::thread::sleep(Duration::from_millis(10));
+
+    let step_result_ok = json!({"measured_v": 3.31});
+    print_scenario_step("END", step_source, step_attr, &format!("step {} → SUCCESS", step_name_ok));
+    let _ = lulu_step_end(
+        step_source,
+        step_attr,
+        step_id_ok,
+        step_name_ok,
+        true,
+        None,
+        Some(5),
+        Some(&step_metadata_ok),
+        Some(&step_result_ok),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    // Step 2: failing step
+    let step_id_fail = "step-check-ripple-002";
+    let step_name_fail = "check-ripple";
+    let step_metadata_fail = json!({"channel": 1, "max_ripple_mv": 50});
+
+    print_scenario_step("BEG", step_source, step_attr, &format!("step {}", step_name_fail));
+    let _ = lulu_step_beg(step_source, step_attr, step_id_fail, step_name_fail, Some(&step_metadata_fail));
+    std::thread::sleep(Duration::from_millis(10));
+
+    let step_result_fail = json!({"measured_ripple_mv": 72});
+    print_scenario_step("END", step_source, step_attr, &format!("step {} → FAIL", step_name_fail));
+    let _ = lulu_step_end(
+        step_source,
+        step_attr,
+        step_id_fail,
+        step_name_fail,
+        false,
+        Some("Ripple 72mV exceeds 50mV limit"),
+        Some(8),
+        Some(&step_metadata_fail),
+        Some(&step_result_fail),
     );
     println!("────────────────────────────────────────────────────────");
 }

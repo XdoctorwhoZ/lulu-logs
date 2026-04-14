@@ -7,5 +7,5 @@ pub mod test_scenario;
 pub use lens_pin::{ActiveView, LensLayout, LensPinData};
 pub use lulu_log_entry::{LuluLogEntry, LuluLevel, decode_data};
 pub use pulse_source::PulseSourceEntry;
-pub use span::{SpanPhase, is_span_type, parse_span_event};
+pub use span::{SpanPhase, is_span_type, is_step_type, parse_span_event};
 pub use test_scenario::{TestScenario, ScenarioStatus};

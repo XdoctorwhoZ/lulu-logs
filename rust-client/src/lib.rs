@@ -451,6 +451,59 @@ pub fn lulu_tool_call_end(
     lulu_publish(source, attribute, level, Data::ToolCallEnd(json))
 }
 
+/// Publishes a specialized `step_beg` log entry.
+pub fn lulu_step_beg(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    step_name: &str,
+    metadata: Option<&Value>,
+) -> Result<(), LuluError> {
+    terminal_logger::print_step_beg(step_name);
+    let json = build_span_payload(
+        span_id,
+        Some(step_name),
+        None,
+        None,
+        None,
+        None,
+        metadata,
+        None,
+    );
+    lulu_publish(source, attribute, LogLevel::Info, Data::StepBeg(json))
+}
+
+/// Publishes a specialized `step_end` log entry.
+pub fn lulu_step_end(
+    source: &str,
+    attribute: &str,
+    span_id: &str,
+    step_name: &str,
+    success: bool,
+    error: Option<&str>,
+    duration_ms: Option<u64>,
+    metadata: Option<&Value>,
+    result: Option<&Value>,
+) -> Result<(), LuluError> {
+    terminal_logger::print_step_end(step_name, success, error);
+    let json = build_span_payload(
+        span_id,
+        Some(step_name),
+        None,
+        Some(success),
+        error,
+        duration_ms,
+        metadata,
+        result,
+    );
+    let level = if success {
+        LogLevel::Info
+    } else {
+        LogLevel::Error
+    };
+    lulu_publish(source, attribute, level, Data::StepEnd(json))
+}
+
 // ---------------------------------------------------------------------------
 // Embedded recorder (lulu-logs v1.3.0)
 // ---------------------------------------------------------------------------

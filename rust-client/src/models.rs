@@ -69,6 +69,10 @@ pub enum DataType {
     ToolCallBeg,
     /// Fin d'appel d'outil — dérivé spécialisé de `span_end`.
     ToolCallEnd,
+    /// Début d'étape de test — dérivé spécialisé de `span_beg`.
+    StepBeg,
+    /// Fin d'étape de test — dérivé spécialisé de `span_end`.
+    StepEnd,
 }
 
 impl DataType {
@@ -91,6 +95,8 @@ impl DataType {
             DataType::ScenarioEnd => "scenario_end",
             DataType::ToolCallBeg => "tool_call_beg",
             DataType::ToolCallEnd => "tool_call_end",
+            DataType::StepBeg => "step_beg",
+            DataType::StepEnd => "step_end",
         }
     }
 
@@ -207,6 +213,10 @@ pub enum Data {
     ToolCallBeg(std::string::String),
     /// Specialized tool-call end payload encoded as UTF-8 JSON.
     ToolCallEnd(std::string::String),
+    /// Specialized step begin payload encoded as UTF-8 JSON.
+    StepBeg(std::string::String),
+    /// Specialized step end payload encoded as UTF-8 JSON.
+    StepEnd(std::string::String),
 }
 
 impl Data {
@@ -229,6 +239,8 @@ impl Data {
             Data::ScenarioEnd(_) => DataType::ScenarioEnd,
             Data::ToolCallBeg(_) => DataType::ToolCallBeg,
             Data::ToolCallEnd(_) => DataType::ToolCallEnd,
+            Data::StepBeg(_) => DataType::StepBeg,
+            Data::StepEnd(_) => DataType::StepEnd,
         }
     }
 
@@ -251,6 +263,8 @@ impl Data {
             Data::ScenarioEnd(s) => DataType::encode_json(s),
             Data::ToolCallBeg(s) => DataType::encode_json(s),
             Data::ToolCallEnd(s) => DataType::encode_json(s),
+            Data::StepBeg(s) => DataType::encode_json(s),
+            Data::StepEnd(s) => DataType::encode_json(s),
         }
     }
 }
