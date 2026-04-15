@@ -207,20 +207,13 @@ fn main() {
     thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 1: all steps pass ────────────────────────────────────────
-    println!("── Scenario 1: voltage-regulation-3v3 (expect: PASS) ─────");
     scenario_voltage_regulation();
-    println!();
 
     // ── Scenario 2: one step fails ────────────────────────────────────────
-    println!("── Scenario 2: overcurrent-protection (expect: FAIL) ─────");
     scenario_overcurrent_protection();
-    println!();
 
     // ── Scenario 3: left in progress ──────────────────────────────────────
-    println!("── Scenario 3: signal-integrity-check (expect: PENDING) ──");
     scenario_signal_integrity();
-    println!("  (scenario and step left open — in progress)");
-    println!();
 
     // ── Stats ─────────────────────────────────────────────────────────────
     if let Some(stats) = lulu_stats() {

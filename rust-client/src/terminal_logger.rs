@@ -37,6 +37,7 @@ pub(crate) fn print_beg(scenario_name: &str) {
     if !is_enabled() {
         return;
     }
+    println!("---------------------------------------------------");
     println!("▶ {scenario_name}");
 }
 
@@ -58,7 +59,7 @@ pub(crate) fn print_step_beg(step_name: &str) {
     if !is_enabled() {
         return;
     }
-    println!("  {CYAN}▸ {step_name}{RESET}");
+    println!("    {CYAN}▸ {step_name}{RESET}");
 }
 
 /// Print the end of a test step with coloured status (indented).
@@ -67,10 +68,10 @@ pub(crate) fn print_step_end(step_name: &str, success: bool, error: Option<&str>
         return;
     }
     if success {
-        println!("  {GREEN}✓ {step_name}{RESET}");
+        println!("    {GREEN}✓ {step_name}{RESET}");
     } else {
         let err_msg = error.unwrap_or("unknown error");
-        println!("  {RED}✗ {step_name} — {err_msg}{RESET}");
+        println!("    {RED}✗ {step_name} — {err_msg}{RESET}");
     }
 }
 
@@ -125,7 +126,11 @@ mod tests {
     #[test]
     fn test_print_end_failure_when_enabled() {
         set_enabled(true);
-        print_end("voltage-regulation", false, Some("measured 4.87V, expected 5.00V"));
+        print_end(
+            "voltage-regulation",
+            false,
+            Some("measured 4.87V, expected 5.00V"),
+        );
         set_enabled(false);
     }
 
@@ -167,7 +172,11 @@ mod tests {
     #[test]
     fn test_print_step_end_failure_when_enabled() {
         set_enabled(true);
-        print_step_end("check-voltage", false, Some("measured 4.87V, expected 5.00V"));
+        print_step_end(
+            "check-voltage",
+            false,
+            Some("measured 4.87V, expected 5.00V"),
+        );
         set_enabled(false);
     }
 
