@@ -13,6 +13,7 @@ use std::time::Duration;
 mod client;
 mod error;
 mod models;
+mod publisher;
 mod rand_util;
 mod recorder;
 mod serializer;
@@ -29,6 +30,7 @@ mod lulu_export_generated;
 pub use client::{LuluConfig, LuluStats};
 pub use error::LuluError;
 pub use models::{Data, DataType, LogLevel};
+pub use publisher::LuluPublisher;
 
 use client::LuluClient;
 use recorder::LuluRecorder;
@@ -268,7 +270,16 @@ impl ScenarioHandle {
     /// Source and attribute are inherited from the scenario (`"test"` / `"scenario"`).
     /// The `span_id` is auto-generated as `"step-{step_name}-{random6}"`.
     /// Prints a coloured `▸ step_name` line when `terminal_logger` is enabled.
-    pub fn step(&self, step_name: &str, metadata: Option<&Value>) -> Result<StepHandle, LuluError> {
+    pub fn step(&self, step_name: &str) -> Result<StepHandle, LuluError> {
+        self.step_with_metadata(step_name, None)
+    }
+
+    /// Same as [`step`](Self::step) but attaches metadata to the `step_beg` entry.
+    pub fn step_with_metadata(
+        &self,
+        step_name: &str,
+        metadata: Option<&Value>,
+    ) -> Result<StepHandle, LuluError> {
         terminal_logger::print_step_beg(step_name);
         let span_id = format!(
             "step-{}-{}",

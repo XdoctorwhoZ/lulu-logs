@@ -20,8 +20,8 @@ use std::time::Duration;
 
 use lulu_logs_client::{
     lulu_init, lulu_is_connected, lulu_publish, lulu_scenario, lulu_shutdown, lulu_span,
-    lulu_start_pulse, lulu_stats, lulu_stop_pulse, lulu_tool_call_beg,
-    lulu_tool_call_end, Data, LogLevel, LuluConfig,
+    lulu_start_pulse, lulu_stats, lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end, Data,
+    LogLevel, LuluConfig,
 };
 use serde_json::json;
 
@@ -828,13 +828,10 @@ fn inject_test_scenarios() {
     let step_name_ok = "measure-voltage";
     let step_metadata_ok = json!({"channel": 1, "expected_v": 3.3});
 
-    print_scenario_step(
-        "BEG",
-        "test",
-        "scenario",
-        &format!("step {}", step_name_ok),
-    );
-    let step_ok = step_scenario.step(step_name_ok, Some(&step_metadata_ok)).unwrap();
+    print_scenario_step("BEG", "test", "scenario", &format!("step {}", step_name_ok));
+    let step_ok = step_scenario
+        .step_with_metadata(step_name_ok, Some(&step_metadata_ok))
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_ok = json!({"measured_v": 3.31});
@@ -863,7 +860,9 @@ fn inject_test_scenarios() {
         "scenario",
         &format!("step {}", step_name_fail),
     );
-    let step_fail = step_scenario.step(step_name_fail, Some(&step_metadata_fail)).unwrap();
+    let step_fail = step_scenario
+        .step_with_metadata(step_name_fail, Some(&step_metadata_fail))
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_fail = json!({"measured_ripple_mv": 72});

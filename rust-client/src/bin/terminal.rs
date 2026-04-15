@@ -26,7 +26,7 @@ use std::thread;
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_publish, lulu_scenario, lulu_shutdown, lulu_stats, Data, LogLevel, LuluConfig,
+    lulu_init, lulu_scenario, lulu_shutdown, lulu_stats, Data, LuluConfig, LuluPublisher,
 };
 use serde_json::json;
 
@@ -56,22 +56,21 @@ fn pace() {
 
 /// Scenario 1 — all steps pass → scenario succeeds.
 fn scenario_voltage_regulation() {
+    let voltage = LuluPublisher::new("psu/channel-1", "voltage").unwrap();
+
     // ── Begin scenario ────────────────────────────────────────────────────
     let scenario = lulu_scenario("voltage-regulation-3v3").unwrap();
     pace();
 
     // ── Step 1: set voltage ───────────────────────────────────────────────
     let step1_meta = json!({"target_v": 3.3});
-    let step1 = scenario.step("set-voltage", Some(&step1_meta)).unwrap();
+    let step1 = scenario
+        .step_with_metadata("set-voltage", Some(&step1_meta))
+        .unwrap();
     pace();
 
     // Simulate the action — publish real measurement data
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "voltage",
-        LogLevel::Info,
-        Data::Float32(3.31),
-    );
+    let _ = voltage.info(Data::Float32(3.31));
     pace();
 
     let step1_result = json!({"actual_v": 3.31});
@@ -81,22 +80,12 @@ fn scenario_voltage_regulation() {
     // ── Step 2: verify stability ──────────────────────────────────────────
     let step2_meta = json!({"samples": 10, "tolerance_mv": 50});
     let step2 = scenario
-        .step("verify-stability", Some(&step2_meta))
+        .step_with_metadata("verify-stability", Some(&step2_meta))
         .unwrap();
     pace();
 
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "voltage",
-        LogLevel::Info,
-        Data::Float32(3.30),
-    );
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "voltage",
-        LogLevel::Info,
-        Data::Float32(3.29),
-    );
+    let _ = voltage.info(Data::Float32(3.30));
+    let _ = voltage.info(Data::Float32(3.29));
     pace();
 
     let step2_result = json!({"min_v": 3.29, "max_v": 3.31, "ripple_mv": 20});
@@ -110,27 +99,21 @@ fn scenario_voltage_regulation() {
 
 /// Scenario 2 — second step fails → scenario fails.
 fn scenario_overcurrent_protection() {
+    let current = LuluPublisher::new("psu/channel-1", "current").unwrap();
+
     // ── Begin scenario ────────────────────────────────────────────────────
     let scenario = lulu_scenario("overcurrent-protection").unwrap();
     pace();
 
     // ── Step 1: ramp current (passes) ─────────────────────────────────────
     let step1_meta = json!({"ramp_target_a": 0.95, "limit_a": 1.0});
-    let step1 = scenario.step("ramp-current", Some(&step1_meta)).unwrap();
+    let step1 = scenario
+        .step_with_metadata("ramp-current", Some(&step1_meta))
+        .unwrap();
     pace();
 
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "current",
-        LogLevel::Info,
-        Data::Float32(0.45),
-    );
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "current",
-        LogLevel::Warn,
-        Data::Float32(0.95),
-    );
+    let _ = current.info(Data::Float32(0.45));
+    let _ = current.warn(Data::Float32(0.95));
     pace();
 
     let step1_result = json!({"peak_a": 0.95});
@@ -140,16 +123,11 @@ fn scenario_overcurrent_protection() {
     // ── Step 2: trigger protection (fails) ────────────────────────────────
     let step2_meta = json!({"inject_a": 1.05, "trip_timeout_ms": 100});
     let step2 = scenario
-        .step("trigger-protection", Some(&step2_meta))
+        .step_with_metadata("trigger-protection", Some(&step2_meta))
         .unwrap();
     pace();
 
-    let _ = lulu_publish(
-        "psu/channel-1",
-        "current",
-        LogLevel::Error,
-        Data::Float32(1.05),
-    );
+    let _ = current.error(Data::Float32(1.05));
     pace();
 
     let step2_result = json!({"peak_a": 1.05, "protection_triggered": false});
@@ -169,6 +147,8 @@ fn scenario_overcurrent_protection() {
 
 /// Scenario 3 — started but never ended (in-progress / pending).
 fn scenario_signal_integrity() {
+    let frequency = LuluPublisher::new("oscilloscope/probe-a", "frequency").unwrap();
+
     // ── Begin scenario ────────────────────────────────────────────────────
     let _scenario = lulu_scenario("signal-integrity-check").unwrap();
     pace();
@@ -176,16 +156,11 @@ fn scenario_signal_integrity() {
     // ── Step: measure frequency (started, never completed) ────────────────
     let step_meta = json!({"expected_hz": 1_000_000});
     let _step = _scenario
-        .step("measure-frequency", Some(&step_meta))
+        .step_with_metadata("measure-frequency", Some(&step_meta))
         .unwrap();
     pace();
 
-    let _ = lulu_publish(
-        "oscilloscope/probe-a",
-        "frequency",
-        LogLevel::Info,
-        Data::Float64(1_000_000.0),
-    );
+    let _ = frequency.info(Data::Float64(1_000_000.0));
     pace();
 
     // Intentionally no .end() — handles dropped, left in progress.

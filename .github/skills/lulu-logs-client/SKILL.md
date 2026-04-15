@@ -353,13 +353,19 @@ let _scenario = lulu_scenario("signal-integrity-check")?;
 use lulu_logs_client::lulu_scenario;
 
 let scenario = lulu_scenario("voltage-regulation-3v3")?;
-let step = scenario.step("set-voltage", None)?;
+let step = scenario.step("set-voltage")?;
 // … perform step …
 step.end(true, None, Some(42), None, None)?;
 scenario.end(true, None)?;
 ```
 
-`ScenarioHandle::step` only requires `step_name` and optional `metadata`.
+Use `step_with_metadata` when you need to attach metadata to the `step_beg` entry:
+
+```rust
+let meta = serde_json::json!({"target_v": 3.3});
+let step = scenario.step_with_metadata("set-voltage", Some(&meta))?;
+```
+
 Source, attribute and `span_id` are inherited / auto-generated.
 
 `StepHandle::end` signature: `end(self, success, error, duration_ms, metadata, result)`.
