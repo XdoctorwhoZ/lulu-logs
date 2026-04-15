@@ -314,14 +314,14 @@ All active pulses are stopped automatically by `lulu_shutdown()`.
 
 Test scenarios provide structured begin/end markers that the UI groups into collapsible test run summaries.
 
-`lulu_scenario_beg` returns a `ScenarioHandle` that captures the scenario name. Call `.end()` on the handle to publish the closing entry. Dropping the handle without calling `.end()` leaves the scenario in-progress (useful for pending/interrupted tests).
+`lulu_scenario` returns a `ScenarioHandle` that captures the scenario name. Call `.end()` on the handle to publish the closing entry. Dropping the handle without calling `.end()` leaves the scenario in-progress (useful for pending/interrupted tests).
 
 ### Begin a scenario and end with success
 
 ```rust
-use lulu_logs_client::lulu_scenario_beg;
+use lulu_logs_client::lulu_scenario;
 
-let scenario = lulu_scenario_beg("voltage-regulation-3v3")?;
+let scenario = lulu_scenario("voltage-regulation-3v3")?;
 // … run the test …
 scenario.end(true, None)?;
 ```
@@ -331,7 +331,7 @@ Source is always `"test"`, attribute is always `"scenario"`. The `span_id` is de
 ### End a scenario with failure
 
 ```rust
-let scenario = lulu_scenario_beg("overcurrent-protection")?;
+let scenario = lulu_scenario("overcurrent-protection")?;
 // … run the test …
 scenario.end(false, Some("current limit not triggered at 2.1 A"))?;
 ```
@@ -341,23 +341,42 @@ level: `Error` when `success` is `false`.
 ### Leave a scenario in-progress
 
 ```rust
-let _scenario = lulu_scenario_beg("signal-integrity-check")?;
+let _scenario = lulu_scenario("signal-integrity-check")?;
 // handle dropped without .end() — scenario stays open
 ```
 
 ### Step handles
 
-`lulu_step_beg` returns a `StepHandle` that works the same way:
+`ScenarioHandle::step()` returns a `StepHandle` that works the same way:
 
 ```rust
-use lulu_logs_client::lulu_step_beg;
+use lulu_logs_client::lulu_scenario;
 
-let step = lulu_step_beg("test", "scenario", "step-set-voltage-001", "set-voltage", None)?;
+let scenario = lulu_scenario("voltage-regulation-3v3")?;
+let step = scenario.step("set-voltage", None)?;
 // … perform step …
 step.end(true, None, Some(42), None, None)?;
+scenario.end(true, None)?;
 ```
 
+`ScenarioHandle::step` only requires `step_name` and optional `metadata`.
+Source, attribute and `span_id` are inherited / auto-generated.
+
 `StepHandle::end` signature: `end(self, success, error, duration_ms, metadata, result)`.
+
+### Span handles
+
+`lulu_span` returns a `SpanHandle` for generic spans with an explicit `kind`:
+
+```rust
+use lulu_logs_client::lulu_span;
+
+let span = lulu_span("calibration/station-a", "span", "span-cal-001", Some("calibration-window"), "calibration", None)?;
+// … perform work …
+span.end(true, None, Some(84), None, None)?;
+```
+
+`SpanHandle::end` signature: `end(self, success, error, duration_ms, metadata, result)`.
 
 ### Using `lulu_publish` directly
 
@@ -442,7 +461,7 @@ Returns `None` if `lulu_init()` has not been called.
 ```rust
 use lulu_logs_client::{
     lulu_init, lulu_publish, lulu_start_pulse, lulu_stop_pulse,
-    lulu_scenario_beg,
+    lulu_scenario,
     lulu_stats, lulu_shutdown,
     Data, LogLevel, LuluClientConfig,
 };
@@ -466,7 +485,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     lulu_publish("bench/psu", "raw-frame", LogLevel::Trace, Data::Bytes(vec![0x02, 0x41, 0x03]))?;
 
     // 4. Simulate a test scenario using the handle pattern
-    let scenario = lulu_scenario_beg("output-accuracy")?;
+    let scenario = lulu_scenario("output-accuracy")?;
 
     let measured = 3.295_f32;
     let ok = (measured - 3.3).abs() < 0.05;

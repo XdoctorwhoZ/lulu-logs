@@ -26,8 +26,7 @@ use std::thread;
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_publish, lulu_scenario_beg, lulu_shutdown, lulu_stats, lulu_step_beg, Data,
-    LogLevel, LuluConfig,
+    lulu_init, lulu_publish, lulu_scenario, lulu_shutdown, lulu_stats, Data, LogLevel, LuluConfig,
 };
 use serde_json::json;
 
@@ -58,19 +57,12 @@ fn pace() {
 /// Scenario 1 — all steps pass → scenario succeeds.
 fn scenario_voltage_regulation() {
     // ── Begin scenario ────────────────────────────────────────────────────
-    let scenario = lulu_scenario_beg("voltage-regulation-3v3").unwrap();
+    let scenario = lulu_scenario("voltage-regulation-3v3").unwrap();
     pace();
 
     // ── Step 1: set voltage ───────────────────────────────────────────────
     let step1_meta = json!({"target_v": 3.3});
-    let step1 = lulu_step_beg(
-        "test",
-        "scenario",
-        "step-set-voltage-001",
-        "set-voltage",
-        Some(&step1_meta),
-    )
-    .unwrap();
+    let step1 = scenario.step("set-voltage", Some(&step1_meta)).unwrap();
     pace();
 
     // Simulate the action — publish real measurement data
@@ -88,14 +80,9 @@ fn scenario_voltage_regulation() {
 
     // ── Step 2: verify stability ──────────────────────────────────────────
     let step2_meta = json!({"samples": 10, "tolerance_mv": 50});
-    let step2 = lulu_step_beg(
-        "test",
-        "scenario",
-        "step-verify-stability-002",
-        "verify-stability",
-        Some(&step2_meta),
-    )
-    .unwrap();
+    let step2 = scenario
+        .step("verify-stability", Some(&step2_meta))
+        .unwrap();
     pace();
 
     let _ = lulu_publish(
@@ -124,19 +111,12 @@ fn scenario_voltage_regulation() {
 /// Scenario 2 — second step fails → scenario fails.
 fn scenario_overcurrent_protection() {
     // ── Begin scenario ────────────────────────────────────────────────────
-    let scenario = lulu_scenario_beg("overcurrent-protection").unwrap();
+    let scenario = lulu_scenario("overcurrent-protection").unwrap();
     pace();
 
     // ── Step 1: ramp current (passes) ─────────────────────────────────────
     let step1_meta = json!({"ramp_target_a": 0.95, "limit_a": 1.0});
-    let step1 = lulu_step_beg(
-        "test",
-        "scenario",
-        "step-ramp-current-001",
-        "ramp-current",
-        Some(&step1_meta),
-    )
-    .unwrap();
+    let step1 = scenario.step("ramp-current", Some(&step1_meta)).unwrap();
     pace();
 
     let _ = lulu_publish(
@@ -159,14 +139,9 @@ fn scenario_overcurrent_protection() {
 
     // ── Step 2: trigger protection (fails) ────────────────────────────────
     let step2_meta = json!({"inject_a": 1.05, "trip_timeout_ms": 100});
-    let step2 = lulu_step_beg(
-        "test",
-        "scenario",
-        "step-trigger-protection-002",
-        "trigger-protection",
-        Some(&step2_meta),
-    )
-    .unwrap();
+    let step2 = scenario
+        .step("trigger-protection", Some(&step2_meta))
+        .unwrap();
     pace();
 
     let _ = lulu_publish(
@@ -195,19 +170,14 @@ fn scenario_overcurrent_protection() {
 /// Scenario 3 — started but never ended (in-progress / pending).
 fn scenario_signal_integrity() {
     // ── Begin scenario ────────────────────────────────────────────────────
-    let _scenario = lulu_scenario_beg("signal-integrity-check").unwrap();
+    let _scenario = lulu_scenario("signal-integrity-check").unwrap();
     pace();
 
     // ── Step: measure frequency (started, never completed) ────────────────
     let step_meta = json!({"expected_hz": 1_000_000});
-    let _step = lulu_step_beg(
-        "test",
-        "scenario",
-        "step-measure-freq-001",
-        "measure-frequency",
-        Some(&step_meta),
-    )
-    .unwrap();
+    let _step = _scenario
+        .step("measure-frequency", Some(&step_meta))
+        .unwrap();
     pace();
 
     let _ = lulu_publish(
@@ -232,8 +202,8 @@ fn main() {
     println!();
     println!("  broker : {}:{}", args.broker_host, args.broker_port);
     println!();
-    println!("  This binary demonstrates how lulu_scenario_beg and");
-    println!("  lulu_step_beg return handles whose .end() method");
+    println!("  This binary demonstrates how lulu_scenario and");
+    println!("  lulu_step return handles whose .end() method");
     println!("  renders on the terminal via the built-in terminal_logger.");
     println!();
     println!("  Legend:");

@@ -254,7 +254,7 @@ fn build_span_payload(
     Value::Object(payload).to_string()
 }
 
-/// Handle returned by [`lulu_scenario_beg`] to mark the end of a test scenario.
+/// Handle returned by [`lulu_scenario`] to mark the end of a test scenario.
 ///
 /// Call [`.end()`](ScenarioHandle::end) to publish the `scenario_end` entry.
 /// Dropping the handle without calling `.end()` leaves the scenario in-progress.
@@ -263,6 +263,37 @@ pub struct ScenarioHandle {
 }
 
 impl ScenarioHandle {
+    /// Publishes a `step_beg` log entry and returns a [`StepHandle`].
+    ///
+    /// Source and attribute are inherited from the scenario (`"test"` / `"scenario"`).
+    /// The `span_id` is auto-generated as `"step-{step_name}-{random6}"`.
+    /// Prints a coloured `▸ step_name` line when `terminal_logger` is enabled.
+    pub fn step(&self, step_name: &str, metadata: Option<&Value>) -> Result<StepHandle, LuluError> {
+        terminal_logger::print_step_beg(step_name);
+        let span_id = format!(
+            "step-{}-{}",
+            step_name,
+            rand_util::generate_random_string(6)
+        );
+        let json = build_span_payload(
+            &span_id,
+            Some(step_name),
+            None,
+            None,
+            None,
+            None,
+            metadata,
+            None,
+        );
+        lulu_publish("test", "scenario", LogLevel::Info, Data::StepBeg(json))?;
+        Ok(StepHandle {
+            source: "test".to_string(),
+            attribute: "scenario".to_string(),
+            span_id,
+            step_name: step_name.to_string(),
+        })
+    }
+
     /// Publishes a `scenario_end` log entry for this scenario.
     ///
     /// Prints a coloured `✓` / `✗` line when `terminal_logger` is enabled.
@@ -293,7 +324,7 @@ impl ScenarioHandle {
 /// Source is always `"test"`, attribute is always `"scenario"`.
 /// The `span_id` is derived as `"scenario-{scenario_name}"`.
 /// Prints a coloured `▶ scenario_name` line when `terminal_logger` is enabled.
-pub fn lulu_scenario_beg(scenario_name: &str) -> Result<ScenarioHandle, LuluError> {
+pub fn lulu_scenario(scenario_name: &str) -> Result<ScenarioHandle, LuluError> {
     terminal_logger::print_beg(scenario_name);
     let span_id = format!("scenario-{}", scenario_name);
     let json = build_span_payload(
@@ -312,52 +343,69 @@ pub fn lulu_scenario_beg(scenario_name: &str) -> Result<ScenarioHandle, LuluErro
     })
 }
 
-/// Publishes a generic `span_beg` log entry.
+/// Handle returned by [`lulu_span`] to mark the end of a generic span.
+///
+/// Call [`.end()`](SpanHandle::end) to publish the `span_end` entry.
+/// Dropping the handle without calling `.end()` leaves the span in-progress.
+pub struct SpanHandle {
+    source: String,
+    attribute: String,
+    span_id: String,
+    name: Option<String>,
+    kind: String,
+}
+
+impl SpanHandle {
+    /// Publishes a `span_end` log entry for this span.
+    pub fn end(
+        self,
+        success: bool,
+        error: Option<&str>,
+        duration_ms: Option<u64>,
+        metadata: Option<&Value>,
+        result: Option<&Value>,
+    ) -> Result<(), LuluError> {
+        let json = build_span_payload(
+            &self.span_id,
+            self.name.as_deref(),
+            Some(&self.kind),
+            Some(success),
+            error,
+            duration_ms,
+            metadata,
+            result,
+        );
+
+        let level = if success {
+            LogLevel::Info
+        } else {
+            LogLevel::Error
+        };
+        lulu_publish(&self.source, &self.attribute, level, Data::SpanEnd(json))
+    }
+}
+
+/// Publishes a generic `span_beg` log entry and returns a [`SpanHandle`].
 ///
 /// Generic spans carry an explicit `kind` so downstream consumers can project
 /// them into specialized views.
-pub fn lulu_span_beg(
+pub fn lulu_span(
     source: &str,
     attribute: &str,
     span_id: &str,
     name: Option<&str>,
     kind: &str,
     metadata: Option<&Value>,
-) -> Result<(), LuluError> {
+) -> Result<SpanHandle, LuluError> {
     let json = build_span_payload(span_id, name, Some(kind), None, None, None, metadata, None);
-    lulu_publish(source, attribute, LogLevel::Info, Data::SpanBeg(json))
-}
-
-/// Publishes a generic `span_end` log entry.
-pub fn lulu_span_end(
-    source: &str,
-    attribute: &str,
-    span_id: &str,
-    name: Option<&str>,
-    kind: &str,
-    success: bool,
-    error: Option<&str>,
-    duration_ms: Option<u64>,
-    metadata: Option<&Value>,
-    result: Option<&Value>,
-) -> Result<(), LuluError> {
-    let json = build_span_payload(
-        span_id,
-        name,
-        Some(kind),
-        Some(success),
-        error,
-        duration_ms,
-        metadata,
-        result,
-    );
-
-    let level = if success {
-        LogLevel::Info
-    } else {
-        LogLevel::Error
-    };
-    lulu_publish(source, attribute, level, Data::SpanEnd(json))
+    lulu_publish(source, attribute, LogLevel::Info, Data::SpanBeg(json))?;
+    Ok(SpanHandle {
+        source: source.to_string(),
+        attribute: attribute.to_string(),
+        span_id: span_id.to_string(),
+        name: name.map(str::to_string),
+        kind: kind.to_string(),
+    })
 }
 
 /// Publishes a specialized `tool_call_beg` log entry.
@@ -411,7 +459,7 @@ pub fn lulu_tool_call_end(
     lulu_publish(source, attribute, level, Data::ToolCallEnd(json))
 }
 
-/// Handle returned by [`lulu_step_beg`] to mark the end of a step.
+/// Handle returned by [`lulu_step`] to mark the end of a step.
 ///
 /// Call [`.end()`](StepHandle::end) to publish the `step_end` entry.
 /// Dropping the handle without calling `.end()` leaves the step in-progress.
@@ -452,34 +500,6 @@ impl StepHandle {
         };
         lulu_publish(&self.source, &self.attribute, level, Data::StepEnd(json))
     }
-}
-
-/// Publishes a specialized `step_beg` log entry and returns a [`StepHandle`].
-pub fn lulu_step_beg(
-    source: &str,
-    attribute: &str,
-    span_id: &str,
-    step_name: &str,
-    metadata: Option<&Value>,
-) -> Result<StepHandle, LuluError> {
-    terminal_logger::print_step_beg(step_name);
-    let json = build_span_payload(
-        span_id,
-        Some(step_name),
-        None,
-        None,
-        None,
-        None,
-        metadata,
-        None,
-    );
-    lulu_publish(source, attribute, LogLevel::Info, Data::StepBeg(json))?;
-    Ok(StepHandle {
-        source: source.to_string(),
-        attribute: attribute.to_string(),
-        span_id: span_id.to_string(),
-        step_name: step_name.to_string(),
-    })
 }
 
 // ---------------------------------------------------------------------------
