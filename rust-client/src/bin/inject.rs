@@ -19,9 +19,9 @@
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_is_connected, lulu_publish, lulu_scenario_beg, lulu_shutdown, lulu_span_beg,
-    lulu_span_end, lulu_start_pulse, lulu_stats, lulu_step_beg, lulu_stop_pulse,
-    lulu_tool_call_beg, lulu_tool_call_end, Data, LogLevel, LuluConfig,
+    lulu_init, lulu_is_connected, lulu_publish, lulu_scenario, lulu_shutdown, lulu_span,
+    lulu_start_pulse, lulu_stats, lulu_stop_pulse, lulu_tool_call_beg, lulu_tool_call_end, Data,
+    LogLevel, LuluConfig,
 };
 use serde_json::json;
 
@@ -619,7 +619,6 @@ fn inject_test_scenarios() {
     // ── Generic span: calibration window ─────────────────────────────────
     let generic_source = "calibration/station-a";
     let generic_attr = "span";
-    let generic_id = "span-calibration-001";
 
     print_scenario_step(
         "BEG",
@@ -628,42 +627,32 @@ fn inject_test_scenarios() {
         "generic span calibration-window",
     );
     let generic_metadata = json!({"operator":"alice","batch":"2026-03-a"});
-    let _ = lulu_span_beg(
-        generic_source,
-        generic_attr,
-        generic_id,
-        Some("calibration-window"),
-        "calibration",
-        Some(&generic_metadata),
-    );
+    let mut span = lulu_span("calibration-window")
+        .source(generic_source)
+        .attribute(generic_attr)
+        .kind("calibration")
+        .metadata(&generic_metadata)
+        .begin()
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
-    let generic_result = json!({"calibrated_channels": 4});
     print_scenario_step(
         "END",
         generic_source,
         generic_attr,
         "generic span calibration-window → SUCCESS",
     );
-    let _ = lulu_span_end(
-        generic_source,
-        generic_attr,
-        generic_id,
-        Some("calibration-window"),
-        "calibration",
-        true,
-        None,
-        Some(84),
-        Some(&generic_metadata),
-        Some(&generic_result),
-    );
+    span.set_metadata(&generic_metadata);
+    span.set_result(&json!({"calibrated_channels": 4}));
+    span.set_duration_ms(84);
+    let _ = span.end();
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 1: passing test ──────────────────────────────────────────
     let name = "voltage-regulation-3v3";
 
     print_scenario_step("BEG", "test", "scenario", name);
-    let scenario1 = lulu_scenario_beg(name).unwrap();
+    let scenario1 = lulu_scenario(name).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     // Some normal logs in between (these belong to the scenario)
@@ -693,7 +682,7 @@ fn inject_test_scenarios() {
     let name2 = "overcurrent-protection";
 
     print_scenario_step("BEG", "test", "scenario", name2);
-    let scenario2 = lulu_scenario_beg(name2).unwrap();
+    let scenario2 = lulu_scenario(name2).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(
@@ -734,7 +723,7 @@ fn inject_test_scenarios() {
     let name3 = "signal-integrity-check";
 
     print_scenario_step("BEG", "test", "scenario", name3);
-    let _scenario3 = lulu_scenario_beg(name3).unwrap();
+    let _scenario3 = lulu_scenario(name3).unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let _ = lulu_publish(
@@ -827,34 +816,23 @@ fn inject_test_scenarios() {
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Step spans ────────────────────────────────────────────────────────
-    let step_source = "psu/channel-1";
-    let step_attr = "step";
+    let step_scenario = lulu_scenario("step-demo").unwrap();
 
     // Step 1: passing step
     let step_name_ok = "measure-voltage";
     let step_metadata_ok = json!({"channel": 1, "expected_v": 3.3});
 
-    print_scenario_step(
-        "BEG",
-        step_source,
-        step_attr,
-        &format!("step {}", step_name_ok),
-    );
-    let step_ok = lulu_step_beg(
-        step_source,
-        step_attr,
-        "step-measure-voltage-001",
-        step_name_ok,
-        Some(&step_metadata_ok),
-    )
-    .unwrap();
+    print_scenario_step("BEG", "test", "scenario", &format!("step {}", step_name_ok));
+    let step_ok = step_scenario
+        .step_with_metadata(step_name_ok, Some(&step_metadata_ok))
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_ok = json!({"measured_v": 3.31});
     print_scenario_step(
         "END",
-        step_source,
-        step_attr,
+        "test",
+        "scenario",
         &format!("step {} → SUCCESS", step_name_ok),
     );
     let _ = step_ok.end(
@@ -872,25 +850,20 @@ fn inject_test_scenarios() {
 
     print_scenario_step(
         "BEG",
-        step_source,
-        step_attr,
+        "test",
+        "scenario",
         &format!("step {}", step_name_fail),
     );
-    let step_fail = lulu_step_beg(
-        step_source,
-        step_attr,
-        "step-check-ripple-002",
-        step_name_fail,
-        Some(&step_metadata_fail),
-    )
-    .unwrap();
+    let step_fail = step_scenario
+        .step_with_metadata(step_name_fail, Some(&step_metadata_fail))
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
     let step_result_fail = json!({"measured_ripple_mv": 72});
     print_scenario_step(
         "END",
-        step_source,
-        step_attr,
+        "test",
+        "scenario",
         &format!("step {} → FAIL", step_name_fail),
     );
     let _ = step_fail.end(
@@ -900,6 +873,8 @@ fn inject_test_scenarios() {
         Some(&step_metadata_fail),
         Some(&step_result_fail),
     );
+
+    let _ = step_scenario.end(false, Some("check-ripple failed"));
     println!("────────────────────────────────────────────────────────");
 }
 
