@@ -619,7 +619,6 @@ fn inject_test_scenarios() {
     // ── Generic span: calibration window ─────────────────────────────────
     let generic_source = "calibration/station-a";
     let generic_attr = "span";
-    let generic_id = "span-calibration-001";
 
     print_scenario_step(
         "BEG",
@@ -628,30 +627,25 @@ fn inject_test_scenarios() {
         "generic span calibration-window",
     );
     let generic_metadata = json!({"operator":"alice","batch":"2026-03-a"});
-    let span = lulu_span(
-        generic_source,
-        generic_attr,
-        generic_id,
-        Some("calibration-window"),
-        "calibration",
-        Some(&generic_metadata),
-    );
+    let mut span = lulu_span("calibration-window")
+        .source(generic_source)
+        .attribute(generic_attr)
+        .kind("calibration")
+        .metadata(&generic_metadata)
+        .begin()
+        .unwrap();
     std::thread::sleep(Duration::from_millis(10));
 
-    let generic_result = json!({"calibrated_channels": 4});
     print_scenario_step(
         "END",
         generic_source,
         generic_attr,
         "generic span calibration-window → SUCCESS",
     );
-    let _ = span.unwrap().end(
-        true,
-        None,
-        Some(84),
-        Some(&generic_metadata),
-        Some(&generic_result),
-    );
+    span.set_metadata(&generic_metadata);
+    span.set_result(&json!({"calibrated_channels": 4}));
+    span.set_duration_ms(84);
+    let _ = span.end();
     std::thread::sleep(Duration::from_millis(300));
 
     // ── Scenario 1: passing test ──────────────────────────────────────────

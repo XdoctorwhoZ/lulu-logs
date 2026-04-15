@@ -26,7 +26,7 @@ use std::thread;
 use std::time::Duration;
 
 use lulu_logs_client::{
-    lulu_init, lulu_scenario, lulu_shutdown, lulu_stats, Data, LuluConfig, LuluPublisher,
+    lulu_init, lulu_scenario, lulu_shutdown, lulu_span, lulu_stats, Data, LuluConfig, LuluPublisher,
 };
 use serde_json::json;
 
@@ -56,7 +56,9 @@ fn pace() {
 
 /// Scenario 1 — all steps pass → scenario succeeds.
 fn scenario_voltage_regulation() {
-    let voltage = LuluPublisher::new("psu/channel-1", "voltage").unwrap();
+    let voltage = LuluPublisher::new("psu/channel-1", "voltage")
+        .unwrap()
+        .terminal(true);
 
     // ── Begin scenario ────────────────────────────────────────────────────
     let scenario = lulu_scenario("voltage-regulation-3v3").unwrap();
@@ -99,7 +101,9 @@ fn scenario_voltage_regulation() {
 
 /// Scenario 2 — second step fails → scenario fails.
 fn scenario_overcurrent_protection() {
-    let current = LuluPublisher::new("psu/channel-1", "current").unwrap();
+    let current = LuluPublisher::new("psu/channel-1", "current")
+        .unwrap()
+        .terminal(true);
 
     // ── Begin scenario ────────────────────────────────────────────────────
     let scenario = lulu_scenario("overcurrent-protection").unwrap();
@@ -147,7 +151,9 @@ fn scenario_overcurrent_protection() {
 
 /// Scenario 3 — started but never ended (in-progress / pending).
 fn scenario_signal_integrity() {
-    let frequency = LuluPublisher::new("oscilloscope/probe-a", "frequency").unwrap();
+    let frequency = LuluPublisher::new("oscilloscope/probe-a", "frequency")
+        .unwrap()
+        .terminal(true);
 
     // ── Begin scenario ────────────────────────────────────────────────────
     let _scenario = lulu_scenario("signal-integrity-check").unwrap();
@@ -164,6 +170,55 @@ fn scenario_signal_integrity() {
     pace();
 
     // Intentionally no .end() — handles dropped, left in progress.
+}
+
+/// Demo 4 — String attribute: simple status messages.
+fn demo_string_messages() {
+    let status = LuluPublisher::new("psu/channel-1", "status")
+        .unwrap()
+        .terminal(true);
+
+    let _ = status.info(Data::String("Power supply initialised".into()));
+    pace();
+    let _ = status.info(Data::String("Output enabled — CV mode".into()));
+    pace();
+    let _ = status.warn(Data::String("Temperature rising: 62°C".into()));
+    pace();
+    let _ = status.error(Data::String("Over-temperature protection tripped".into()));
+    pace();
+}
+
+/// Demo 5 — Generic span: calibration routine.
+fn demo_generic_span() {
+    let calibration = LuluPublisher::new("psu/channel-1", "calibration")
+        .unwrap()
+        .terminal(true);
+
+    // Start a generic span of kind "calibration".
+    let meta = json!({"reference_v": 5.0, "points": 3});
+    let mut span = lulu_span("5V-calibration")
+        .source("psu/channel-1")
+        .attribute("calibration")
+        .kind("calibration")
+        .metadata(&meta)
+        .terminal(true)
+        .begin()
+        .unwrap();
+    pace();
+
+    // Publish measurements during calibration.
+    let _ = calibration.info(Data::Float32(4.98));
+    pace();
+    let _ = calibration.info(Data::Float32(5.01));
+    pace();
+    let _ = calibration.info(Data::Float32(5.00));
+    pace();
+
+    // End the span.
+    span.set_result(&json!({"avg_v": 4.997, "deviation_mv": 15}));
+    span.set_duration_ms(320);
+    let _ = span.end();
+    pace();
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -214,6 +269,12 @@ fn main() {
 
     // ── Scenario 3: left in progress ──────────────────────────────────────
     scenario_signal_integrity();
+
+    // ── Demo 4: String messages ───────────────────────────────────────────
+    demo_string_messages();
+
+    // ── Demo 5: generic span ──────────────────────────────────────────────
+    demo_generic_span();
 
     // ── Stats ─────────────────────────────────────────────────────────────
     if let Some(stats) = lulu_stats() {

@@ -13,6 +13,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::models::{Data, LogLevel};
+
 /// Global flag — toggled once by [`crate::lulu_init`].
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -21,6 +23,11 @@ const GREEN: &str = "\x1b[32m";
 const RED: &str = "\x1b[31m";
 const CYAN: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
+
+const ORANGE: &str = "\x1b[38;5;208m";
+const BG_GREEN: &str = "\x1b[42;30m";
+const BG_RED: &str = "\x1b[41;97m";
+const BG_CYAN: &str = "\x1b[46;30m";
 
 /// Enable or disable the terminal logger.  Called from [`crate::lulu_init`].
 pub(crate) fn set_enabled(on: bool) {
@@ -38,7 +45,7 @@ pub(crate) fn print_beg(scenario_name: &str) {
         return;
     }
     println!("---------------------------------------------------");
-    println!("▶ {scenario_name}");
+    println!("{BG_CYAN} ▶ {scenario_name} {RESET}");
 }
 
 /// Print the end of a test scenario with coloured status.
@@ -47,10 +54,10 @@ pub(crate) fn print_end(scenario_name: &str, success: bool, error: Option<&str>)
         return;
     }
     if success {
-        println!("{GREEN}✓ {scenario_name}{RESET}");
+        println!("{BG_GREEN} ✓ {scenario_name} {RESET}");
     } else {
         let err_msg = error.unwrap_or("unknown error");
-        println!("{RED}✗ {scenario_name} — {err_msg}{RESET}");
+        println!("{BG_RED} ✗ {scenario_name} — {err_msg} {RESET}");
     }
 }
 
@@ -72,6 +79,42 @@ pub(crate) fn print_step_end(step_name: &str, success: bool, error: Option<&str>
     } else {
         let err_msg = error.unwrap_or("unknown error");
         println!("    {RED}✗ {step_name} — {err_msg}{RESET}");
+    }
+}
+
+/// Print the start of a generic span.
+pub(crate) fn print_span_beg(name: &str) {
+    if !is_enabled() {
+        return;
+    }
+    println!("{ORANGE}◆{RESET} {name}");
+}
+
+/// Print the end of a generic span with coloured icon only.
+pub(crate) fn print_span_end(name: &str, success: bool, error: Option<&str>) {
+    if !is_enabled() {
+        return;
+    }
+    if success {
+        println!("{ORANGE}◇{RESET} {name}");
+    } else {
+        let err_msg = error.unwrap_or("unknown error");
+        println!("{RED}✗{RESET} {name} — {err_msg}");
+    }
+}
+
+/// Print a publisher data entry.
+///
+/// * **String data** — prints only the string content (no source/attribute).
+/// * **Other types** — prints `source · attribute = value`.
+pub(crate) fn print_publish(source: &str, attribute: &str, _level: &LogLevel, data: &Data) {
+    match data {
+        Data::String(s) => {
+            println!("{s}");
+        }
+        _ => {
+            println!("{source} · {attribute} = {:?}", data);
+        }
     }
 }
 

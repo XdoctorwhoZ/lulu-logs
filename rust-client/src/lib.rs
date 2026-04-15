@@ -259,9 +259,11 @@ fn build_span_payload(
 /// Handle returned by [`lulu_scenario`] to mark the end of a test scenario.
 ///
 /// Call [`.end()`](ScenarioHandle::end) to publish the `scenario_end` entry.
-/// Dropping the handle without calling `.end()` leaves the scenario in-progress.
+/// If dropped without calling `.end()`, the scenario is automatically ended
+/// as a success.
 pub struct ScenarioHandle {
     scenario_name: String,
+    finished: bool,
 }
 
 impl ScenarioHandle {
@@ -302,13 +304,19 @@ impl ScenarioHandle {
             attribute: "scenario".to_string(),
             span_id,
             step_name: step_name.to_string(),
+            finished: false,
         })
     }
 
     /// Publishes a `scenario_end` log entry for this scenario.
     ///
     /// Prints a coloured `✓` / `✗` line when `terminal_logger` is enabled.
-    pub fn end(self, success: bool, error: Option<&str>) -> Result<(), LuluError> {
+    pub fn end(mut self, success: bool, error: Option<&str>) -> Result<(), LuluError> {
+        self.finished = true;
+        self.finish(success, error)
+    }
+
+    fn finish(&self, success: bool, error: Option<&str>) -> Result<(), LuluError> {
         terminal_logger::print_end(&self.scenario_name, success, error);
         let span_id = format!("scenario-{}", self.scenario_name);
         let json = build_span_payload(
@@ -327,6 +335,14 @@ impl ScenarioHandle {
             LogLevel::Error
         };
         lulu_publish("test", "scenario", level, Data::ScenarioEnd(json))
+    }
+}
+
+impl Drop for ScenarioHandle {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.finish(true, None);
+        }
     }
 }
 
@@ -351,40 +367,198 @@ pub fn lulu_scenario(scenario_name: &str) -> Result<ScenarioHandle, LuluError> {
     lulu_publish("test", "scenario", LogLevel::Info, Data::ScenarioBeg(json))?;
     Ok(ScenarioHandle {
         scenario_name: scenario_name.to_string(),
+        finished: false,
     })
 }
 
-/// Handle returned by [`lulu_span`] to mark the end of a generic span.
+/// Builder for a generic span.
 ///
-/// Call [`.end()`](SpanHandle::end) to publish the `span_end` entry.
-/// Dropping the handle without calling `.end()` leaves the span in-progress.
+/// Created by [`lulu_span`].  Configure with chained methods, then call
+/// [`.begin()`](SpanBuilder::begin) to publish the `span_beg` entry and
+/// obtain a [`SpanHandle`].
+///
+/// # Example
+/// ```no_run
+/// use lulu_logs_client::lulu_span;
+/// use serde_json::json;
+///
+/// let mut span = lulu_span("5V-calibration")
+///     .source("psu/channel-1")
+///     .attribute("calibration")
+///     .kind("calibration")
+///     .metadata(&json!({"reference_v": 5.0}))
+///     .terminal(true)
+///     .begin()
+///     .unwrap();
+///
+/// span.set_result(&json!({"avg_v": 4.997}));
+/// span.set_duration_ms(320);
+/// span.end().unwrap();
+/// ```
+pub struct SpanBuilder {
+    name: String,
+    source: Option<String>,
+    attribute: Option<String>,
+    kind: Option<String>,
+    metadata: Option<Value>,
+    terminal: bool,
+}
+
+impl SpanBuilder {
+    /// Sets the MQTT source path (e.g. `"psu/channel-1"`).  **Required.**
+    pub fn source(mut self, source: &str) -> Self {
+        self.source = Some(source.to_string());
+        self
+    }
+
+    /// Sets the MQTT attribute (e.g. `"calibration"`).  **Required.**
+    pub fn attribute(mut self, attribute: &str) -> Self {
+        self.attribute = Some(attribute.to_string());
+        self
+    }
+
+    /// Sets the span kind (e.g. `"calibration"`, `"measurement"`).
+    /// Defaults to `"span"` if not set.
+    pub fn kind(mut self, kind: &str) -> Self {
+        self.kind = Some(kind.to_string());
+        self
+    }
+
+    /// Attaches metadata to the `span_beg` entry.
+    pub fn metadata(mut self, metadata: &Value) -> Self {
+        self.metadata = Some(metadata.clone());
+        self
+    }
+
+    /// Enables or disables terminal output for this span.  Default: `false`.
+    pub fn terminal(mut self, enabled: bool) -> Self {
+        self.terminal = enabled;
+        self
+    }
+
+    /// Validates configuration, publishes the `span_beg` entry and returns
+    /// a [`SpanHandle`].
+    ///
+    /// # Errors
+    /// Returns [`LuluError::InvalidSource`] if `source` was not set or is
+    /// invalid, and [`LuluError::InvalidAttribute`] if `attribute` was not
+    /// set or is invalid.
+    pub fn begin(self) -> Result<SpanHandle, LuluError> {
+        let source = self
+            .source
+            .as_deref()
+            .ok_or(LuluError::InvalidSource("source is required".to_string()))?;
+        let attribute = self
+            .attribute
+            .as_deref()
+            .ok_or(LuluError::InvalidAttribute(
+                "attribute is required".to_string(),
+            ))?;
+
+        topic::parse_source(source)?;
+        topic::validate_attribute(attribute)?;
+
+        let kind = self.kind.as_deref().unwrap_or("span");
+        let span_id = format!(
+            "span-{}-{}",
+            self.name,
+            rand_util::generate_random_string(6)
+        );
+
+        let json = build_span_payload(
+            &span_id,
+            Some(&self.name),
+            Some(kind),
+            None,
+            None,
+            None,
+            self.metadata.as_ref(),
+            None,
+        );
+
+        if self.terminal {
+            terminal_logger::print_span_beg(&self.name);
+        }
+
+        lulu_publish(source, attribute, LogLevel::Info, Data::SpanBeg(json))?;
+
+        Ok(SpanHandle {
+            source: source.to_string(),
+            attribute: attribute.to_string(),
+            span_id,
+            name: self.name,
+            kind: kind.to_string(),
+            terminal: self.terminal,
+            metadata: None,
+            result: None,
+            duration_ms: None,
+            finished: false,
+        })
+    }
+}
+
+/// Handle returned by [`SpanBuilder::begin`] to mark the end of a generic span.
+///
+/// Set optional metadata, result and duration via the `set_*` methods, then
+/// call [`.end()`](SpanHandle::end) (success) or
+/// [`.fail()`](SpanHandle::fail) (failure) to publish the `span_end` entry.
+/// If dropped without calling either, the span is automatically ended as a
+/// success.
 pub struct SpanHandle {
     source: String,
     attribute: String,
     span_id: String,
-    name: Option<String>,
+    name: String,
     kind: String,
+    terminal: bool,
+    metadata: Option<Value>,
+    result: Option<Value>,
+    duration_ms: Option<u64>,
+    finished: bool,
 }
 
 impl SpanHandle {
-    /// Publishes a `span_end` log entry for this span.
-    pub fn end(
-        self,
-        success: bool,
-        error: Option<&str>,
-        duration_ms: Option<u64>,
-        metadata: Option<&Value>,
-        result: Option<&Value>,
-    ) -> Result<(), LuluError> {
+    /// Attaches or replaces metadata for the `span_end` entry.
+    pub fn set_metadata(&mut self, metadata: &Value) {
+        self.metadata = Some(metadata.clone());
+    }
+
+    /// Attaches or replaces the result payload for the `span_end` entry.
+    pub fn set_result(&mut self, result: &Value) {
+        self.result = Some(result.clone());
+    }
+
+    /// Sets the span duration (milliseconds) for the `span_end` entry.
+    pub fn set_duration_ms(&mut self, duration_ms: u64) {
+        self.duration_ms = Some(duration_ms);
+    }
+
+    /// Publishes a successful `span_end` log entry.
+    pub fn end(mut self) -> Result<(), LuluError> {
+        self.finished = true;
+        self.finish(true, None)
+    }
+
+    /// Publishes a failed `span_end` log entry with an error message.
+    pub fn fail(mut self, error: &str) -> Result<(), LuluError> {
+        self.finished = true;
+        self.finish(false, Some(error))
+    }
+
+    fn finish(&self, success: bool, error: Option<&str>) -> Result<(), LuluError> {
+        if self.terminal {
+            terminal_logger::print_span_end(&self.name, success, error);
+        }
+
         let json = build_span_payload(
             &self.span_id,
-            self.name.as_deref(),
+            Some(&self.name),
             Some(&self.kind),
             Some(success),
             error,
-            duration_ms,
-            metadata,
-            result,
+            self.duration_ms,
+            self.metadata.as_ref(),
+            self.result.as_ref(),
         );
 
         let level = if success {
@@ -396,27 +570,28 @@ impl SpanHandle {
     }
 }
 
-/// Publishes a generic `span_beg` log entry and returns a [`SpanHandle`].
+impl Drop for SpanHandle {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.finish(true, None);
+        }
+    }
+}
+
+/// Creates a [`SpanBuilder`] for a generic span with the given name.
 ///
-/// Generic spans carry an explicit `kind` so downstream consumers can project
-/// them into specialized views.
-pub fn lulu_span(
-    source: &str,
-    attribute: &str,
-    span_id: &str,
-    name: Option<&str>,
-    kind: &str,
-    metadata: Option<&Value>,
-) -> Result<SpanHandle, LuluError> {
-    let json = build_span_payload(span_id, name, Some(kind), None, None, None, metadata, None);
-    lulu_publish(source, attribute, LogLevel::Info, Data::SpanBeg(json))?;
-    Ok(SpanHandle {
-        source: source.to_string(),
-        attribute: attribute.to_string(),
-        span_id: span_id.to_string(),
-        name: name.map(str::to_string),
-        kind: kind.to_string(),
-    })
+/// Configure source, attribute, kind, metadata and terminal via the builder,
+/// then call [`.begin()`](SpanBuilder::begin) to publish the `span_beg`
+/// entry and obtain a [`SpanHandle`].
+pub fn lulu_span(name: &str) -> SpanBuilder {
+    SpanBuilder {
+        name: name.to_string(),
+        source: None,
+        attribute: None,
+        kind: None,
+        metadata: None,
+        terminal: false,
+    }
 }
 
 /// Publishes a specialized `tool_call_beg` log entry.
@@ -473,12 +648,14 @@ pub fn lulu_tool_call_end(
 /// Handle returned by [`lulu_step`] to mark the end of a step.
 ///
 /// Call [`.end()`](StepHandle::end) to publish the `step_end` entry.
-/// Dropping the handle without calling `.end()` leaves the step in-progress.
+/// If dropped without calling `.end()`, the step is automatically ended
+/// as a success.
 pub struct StepHandle {
     source: String,
     attribute: String,
     span_id: String,
     step_name: String,
+    finished: bool,
 }
 
 impl StepHandle {
@@ -486,7 +663,19 @@ impl StepHandle {
     ///
     /// Prints a coloured `✓` / `✗` line when `terminal_logger` is enabled.
     pub fn end(
-        self,
+        mut self,
+        success: bool,
+        error: Option<&str>,
+        duration_ms: Option<u64>,
+        metadata: Option<&Value>,
+        result: Option<&Value>,
+    ) -> Result<(), LuluError> {
+        self.finished = true;
+        self.finish(success, error, duration_ms, metadata, result)
+    }
+
+    fn finish(
+        &self,
         success: bool,
         error: Option<&str>,
         duration_ms: Option<u64>,
@@ -510,6 +699,14 @@ impl StepHandle {
             LogLevel::Error
         };
         lulu_publish(&self.source, &self.attribute, level, Data::StepEnd(json))
+    }
+}
+
+impl Drop for StepHandle {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.finish(true, None, None, None, None);
+        }
     }
 }
 

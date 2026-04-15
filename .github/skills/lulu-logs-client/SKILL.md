@@ -372,17 +372,34 @@ Source, attribute and `span_id` are inherited / auto-generated.
 
 ### Span handles
 
-`lulu_span` returns a `SpanHandle` for generic spans with an explicit `kind`:
+`lulu_span` returns a `SpanBuilder`. Configure source, attribute, kind, metadata and terminal via chained methods, then call `.begin()` to publish the `span_beg` entry and obtain a `SpanHandle`:
 
 ```rust
 use lulu_logs_client::lulu_span;
+use serde_json::json;
 
-let span = lulu_span("calibration/station-a", "span", "span-cal-001", Some("calibration-window"), "calibration", None)?;
+let mut span = lulu_span("calibration-window")
+    .source("calibration/station-a")
+    .attribute("span")
+    .kind("calibration")
+    .metadata(&json!({"operator": "alice"}))
+    .terminal(true)
+    .begin()?;
+
 // … perform work …
-span.end(true, None, Some(84), None, None)?;
+span.set_result(&json!({"calibrated_channels": 4}));
+span.set_duration_ms(84);
+span.end()?;          // success
+
+// Or for failure:
+// span.fail("out of tolerance")?;
 ```
 
-`SpanHandle::end` signature: `end(self, success, error, duration_ms, metadata, result)`.
+Builder methods: `.source(&str)` (required), `.attribute(&str)` (required), `.kind(&str)` (default `"span"`), `.metadata(&Value)`, `.terminal(bool)` (default `false`).
+
+`SpanHandle` setters: `.set_metadata(&Value)`, `.set_result(&Value)`, `.set_duration_ms(u64)`.
+
+`SpanHandle::end(self)` publishes `span_end` with `success=true`. `SpanHandle::fail(self, &str)` publishes `span_end` with `success=false` and the error message.
 
 ### Using `lulu_publish` directly
 
