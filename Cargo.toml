@@ -1,3 +1,0 @@
-[workspace]
-members = ["rust-client", "app"]
-resolver = "2"
