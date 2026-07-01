@@ -5,7 +5,7 @@
 
 Lulu-Logs est un système de logging conçu pour fusionner des données de test hétérogènes dans une timeline unique et produire des rapports de test interactifs.
 
-Ce dépôt contient la **spécification du protocole** lulu-logs. Les implémentations (application desktop, client Rust, etc.) sont hébergées dans des dépôts séparés.
+Ce dépôt contient la **spécification du protocole** lulu-logs. Les implémentations (application desktop, client Rust, client Python, etc.) sont hébergées dans des dépôts séparés.
 
 ---
 
@@ -82,7 +82,7 @@ lulu/+/+/status
 
 ## 3. Structure du payload (FlatBuffers)
 
-Le payload MQTT est un **buffer binaire FlatBuffers** encodant une table `LogEntry`.
+La payload MQTT est un **buffer binaire FlatBuffers** encodant une table `LogEntry`.
 
 ### 3.1 Champs de `LogEntry`
 
