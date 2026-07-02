@@ -1,7 +1,7 @@
 # lulu-logs — Spécification du protocole de logging MQTT
 
-> **Version** : 1.3.0
-> **Date** : 2026-02-27
+> **Version** : 1.4.0
+> **Date** : 2026-07-02
 
 Lulu-Logs est un système de logging conçu pour fusionner des données de test hétérogènes dans une timeline unique et produire des rapports de test interactifs.
 
@@ -92,7 +92,7 @@ Les payload MQTT sont des **buffer binaire FlatBuffers** encodant une table `Log
 |-------|-----------------|-------------|-------------|
 | `timestamp` | `string` | Oui | Horodatage UTC de l'événement au format ISO 8601 RFC 3339 avec précision milliseconde (ex. `2026-02-26T14:30:00.123Z`) |
 | `level` | `LogLevel` (enum) | Oui | Niveau de sévérité de l'entrée |
-| `type` | `string` | Oui | Type de la donnée transportée dans `data` — détermine comment interpréter les octets bruts (voir tableau 3.3) |
+| `type` | `DataType` (enum u32) | Oui | Type de la donnée transportée dans `data` — détermine comment interpréter les octets bruts (voir tableau 3.3) |
 | `data` | `[ubyte]` | Oui | Valeur de la donnée sous forme de buffer binaire brut, dont l'interprétation dépend du champ `type` |
 
 > **Note** : Le nom de la source (`source`) et le nom de l'attribut (`attribute_name`) ne figurent **pas** dans le payload — ils sont portés exclusivement par le topic MQTT.
@@ -108,30 +108,32 @@ Les payload MQTT sont des **buffer binaire FlatBuffers** encodant une table `Log
 | `4` | `Error` | Erreur récupérable |
 | `5` | `Fatal` | Erreur critique, arrêt probable |
 
-### 3.3 Valeurs reconnues pour `type`
+### 3.3 Enum `DataType`
 
-| Valeur de `type` | Encodage des octets de `data` |
-|-----------------|-------------------------------|
-| `"string"` | UTF-8 |
-| `"int32"` | Entier signé 32 bits, little-endian |
-| `"int64"` | Entier signé 64 bits, little-endian |
-| `"float32"` | Flottant IEEE 754 simple précision, little-endian |
-| `"float64"` | Flottant IEEE 754 double précision, little-endian |
-| `"bool"` | 1 octet : `0x00` = false, `0x01` = true |
-| `"json"` | Document JSON encodé en UTF-8 |
-| `"bytes"` | Données binaires opaques, pas d'interprétation définie |
-| `"net_packet"` | Données binaires opaques contenant un paquet réseau (voir §3.5) |
-| `"serial_chunk"` | Données binaires opaques contenant un fragment de liaison série (voir §3.5) |
-| `"span_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"span_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"scenario_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"scenario_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"tool_call_beg"` | Document JSON encodé en UTF-8 (voir §3.4) |
-| `"tool_call_end"` | Document JSON encodé en UTF-8 (voir §3.4) |
+Le champ `type` est maintenant un enum `u32` avec les valeurs suivantes :
+
+| Valeur numérique | Identifiant | Encodage des octets de `data` |
+|------------------|-------------|-------------------------------|
+| `0` | `String` | UTF-8 |
+| `1` | `Int32` | Entier signé 32 bits, little-endian |
+| `2` | `Int64` | Entier signé 64 bits, little-endian |
+| `3` | `Float32` | Flottant IEEE 754 simple précision, little-endian |
+| `4` | `Float64` | Flottant IEEE 754 double précision, little-endian |
+| `5` | `Bool` | 1 octet : `0x00` = false, `0x01` = true |
+| `6` | `Json` | Document JSON encodé en UTF-8 |
+| `7` | `Bytes` | Données binaires opaques, pas d'interprétation définie |
+| `8` | `NetPacket` | Données binaires opaques contenant un paquet réseau (voir §3.5) |
+| `9` | `SerialChunk` | Données binaires opaques contenant un fragment de liaison série (voir §3.5) |
+| `1000` | `SpanBeg` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `1001` | `SpanEnd` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `1002` | `ScenarioBeg` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `1003` | `ScenarioEnd` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `1004` | `StepBeg` | Document JSON encodé en UTF-8 (voir §3.4) |
+| `1005` | `StepEnd` | Document JSON encodé en UTF-8 (voir §3.4) |
 
 ### 3.4 Types spéciaux — spans génériques et dérivés
 
-Les types `span_beg` et `span_end` marquent les bornes du cycle de vie d'une opération nommée. Ils fournissent un contrat générique réutilisable par des types spécialisés comme `scenario_beg` / `scenario_end` et `tool_call_beg` / `tool_call_end`.
+Les types `span_beg` et `span_end` marquent les bornes du cycle de vie d'une opération nommée. Ils fournissent un contrat générique réutilisable par des types spécialisés comme `scenario_beg` / `scenario_end` et `step_beg` / `step_end`.
 
 L'encodage du champ `data` est identique au type `"json"` : octets UTF-8 d'un document JSON valide.
 
@@ -151,7 +153,7 @@ Publié au **début** d'un span générique.
 |------------|------|-------------|-------------|
 | `span_id` | string | Oui | Identifiant unique de corrélation du span |
 | `name` | string | Non | Nom lisible du span |
-| `kind` | string | Oui | Nature du span générique (ex. `"scenario"`, `"tool_call"`, `"calibration"`) |
+| `kind` | string | Oui | Nature du span générique (ex. `"scenario"`, `"calibration"`) |
 | `metadata` | object | Non | Métadonnées structurées libres |
 
 **Exemple** :
@@ -200,25 +202,6 @@ Ces deux types sont des dérivés spécialisés du contrat span pour les scénar
 **Exemple `scenario_end`** :
 ```json
 { "span_id": "scenario-voltage-regulation-3v3", "name": "voltage-regulation-3v3", "success": true, "duration_ms": 24, "result": { "measured_min": 3.30, "measured_max": 3.31 } }
-```
-
-#### `"tool_call_beg"` et `"tool_call_end"`
-
-Ces deux types sont des dérivés spécialisés du contrat span pour tracer le début et la fin d'un appel d'outil d'agent.
-
-- `kind` est implicite et vaut `"tool_call"`.
-- `name` contient en pratique le nom de l'outil.
-- `metadata` peut contenir le nom de l'agent, un résumé des arguments et tout contexte utile.
-- `result` peut contenir un résumé structuré du résultat de l'appel d'outil.
-
-**Exemple `tool_call_beg`** :
-```json
-{ "span_id": "tool-call-read-file-001", "name": "read_file", "metadata": { "agent_name": "Copilot", "arguments": { "path": "README.md" } } }
-```
-
-**Exemple `tool_call_end`** :
-```json
-{ "span_id": "tool-call-read-file-001", "name": "read_file", "success": true, "duration_ms": 12, "metadata": { "agent_name": "Copilot" }, "result": { "status": "ok", "bytes_read": 2048 } }
 ```
 
 #### `"step_beg"` et `"step_end"`
@@ -285,7 +268,7 @@ Les fichiers de schéma FlatBuffers se trouvent dans le répertoire [`schema/`](
 
 ```fbs
 // lulu_logs.fbs
-// Protocol: lulu-logs v1.3.0
+// Protocol: lulu-logs v1.4.0
 // Description: Schema for MQTT log payloads — source and attribute are carried
 //              exclusively by the topic, not present in this payload.
 
@@ -318,12 +301,7 @@ table LogEntry {
 
   // Type descriptor for the data field.
   // Determines how to interpret the raw bytes in `data`.
-  // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
-  //               "net_packet", "serial_chunk",
-  //               "span_beg", "span_end",
-  //               "scenario_beg", "scenario_end",
-  //               "tool_call_beg", "tool_call_end".
-  type: string (required);
+  type: DataType (required);
 
   // The actual data value as a raw binary buffer.
   // Interpretation depends on the `type` field.
@@ -369,7 +347,7 @@ lulu/mcp/filesystem/read-file
 timestamp : "2026-02-26T14:30:00.123Z"
 level     : Info
 type      : "string"
-data      : <octets UTF-8 de "Tool call completed successfully">
+data      : <octets UTF-8 de "Operation completed successfully">
 ```
 
 ### 5.2 Publication d'un log `Error` avec données JSON
@@ -430,36 +408,6 @@ timestamp : "2026-02-26T14:32:01.978Z"
 level     : Error
 type      : "scenario_end"
 data      : <octets UTF-8 de '{"span_id": "scenario-read-file-returns-content", "name": "read-file-returns-content", "success": false, "error": "Expected file content \"hello\" but got empty response", "duration_ms": 178}'>
-```
-
-### 5.6 Début d'un appel d'outil d'agent
-
-**Topic** :
-```
-lulu/agent/copilot/tool-call
-```
-
-**Payload** (représentation lisible avant sérialisation FlatBuffers) :
-```
-timestamp : "2026-02-26T14:32:10.000Z"
-level     : Info
-type      : "tool_call_beg"
-data      : <octets UTF-8 de '{"span_id": "tool-call-read-file-001", "name": "read_file", "metadata": {"agent_name": "Copilot", "arguments": {"path": "README.md"}}}'>
-```
-
-### 5.7 Fin d'un appel d'outil d'agent
-
-**Topic** :
-```
-lulu/agent/copilot/tool-call
-```
-
-**Payload** (représentation lisible avant sérialisation FlatBuffers) :
-```
-timestamp : "2026-02-26T14:32:10.012Z"
-level     : Info
-type      : "tool_call_end"
-data      : <octets UTF-8 de '{"span_id": "tool-call-read-file-001", "name": "read_file", "success": true, "duration_ms": 12, "result": {"status": "ok", "bytes_read": 2048}}'>
 ```
 
 ### 5.8 Décodage côté consommateur

@@ -1,5 +1,5 @@
 // lulu_logs.fbs
-// Protocol: lulu-logs v1.3.0
+// Protocol: lulu-logs v1.4.0
 // Description: Schema for MQTT log payloads — source and attribute are carried
 //              exclusively by the topic, not present in this payload.
 
@@ -18,6 +18,33 @@ enum LogLevel : byte {
 }
 
 // ---------------------------------------------------------------------------
+// Data type enum — determines how to interpret the raw bytes in `data`.
+// ---------------------------------------------------------------------------
+enum DataType : u32 {
+  // Primitive types
+  String = 0,
+  Int32 = 1,
+  Int64 = 2,
+  Float32 = 3,
+  Float64 = 4,
+  Bool = 5,
+  Json = 6,
+  Bytes = 7,
+
+  // Specialized binary types
+  NetPacket = 8,
+  SerialChunk = 9,
+
+  // Span types (generic and derived) - grouped together starting at 1000
+  SpanBeg = 1000,
+  SpanEnd = 1001,
+  ScenarioBeg = 1002,
+  ScenarioEnd = 1003,
+  StepBeg = 1004,
+  StepEnd = 1005
+}
+
+// ---------------------------------------------------------------------------
 // Root table — one per MQTT publish.
 // The owning source and attribute name are NOT stored here;
 // they are derived from the MQTT topic.
@@ -32,13 +59,7 @@ table LogEntry {
 
   // Type descriptor for the data field.
   // Determines how to interpret the raw bytes in `data`.
-  // Known values: "string", "int32", "int64", "float32", "float64", "bool", "json", "bytes",
-  //               "net_packet", "serial_chunk",
-  //               "span_beg", "span_end",
-  //               "scenario_beg", "scenario_end",
-  //               "tool_call_beg", "tool_call_end",
-  //               "step_beg", "step_end".
-  type: string (required);
+  type: DataType (required);
 
   // The actual data value as a raw binary buffer.
   // Interpretation depends on the `type` field.
