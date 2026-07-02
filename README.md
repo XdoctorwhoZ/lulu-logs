@@ -24,7 +24,11 @@ Ce dépôt contient la **spécification du protocole** lulu-logs. Les implément
 
 ## 1. Vue d'ensemble
 
-Le protocole `lulu-logs` définit un canal de transport MQTT structuré pour les événements de logging. Toute l'information d'identification (source et attribut) est portée par le **topic MQTT**, tandis que le **payload** ne contient que les données métier, sérialisées en binaire au format [FlatBuffers](https://flatbuffers.dev/).
+Le protocole `lulu-logs` définit un canal de transport MQTT structuré pour unifier des événements de log hétérogènes.
+Chaque source de log est identifié par son **topic MQTT**, tandis que les **payload** ne contienent que les données métier, sérialisées en binaire au format [FlatBuffers](https://flatbuffers.dev/).
+
+
+TODO IMAGE !!!
 
 ---
 
