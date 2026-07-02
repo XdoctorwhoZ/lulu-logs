@@ -80,17 +80,11 @@ Pour recevoir tous les logs d'une source spécifique (tous attributs) :
 lulu/mcp/filesystem/#
 ```
 
-Pour recevoir uniquement un attribut précis sur toutes les sources :
-
-```
-lulu/+/+/status
-```
-
 ---
 
-## 3. Structure du payload (FlatBuffers)
+## 3. Structure des payload (FlatBuffers)
 
-La payload MQTT est un **buffer binaire FlatBuffers** encodant une table `LogEntry`.
+Les payload MQTT sont des **buffer binaire FlatBuffers** encodant une table `LogEntry`.
 
 ### 3.1 Champs de `LogEntry`
 
