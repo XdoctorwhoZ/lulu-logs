@@ -25,12 +25,12 @@ Ce dépôt contient la **spécification du protocole** lulu-logs. Les implément
 ## 1. Vue d'ensemble
 
 Le protocole `lulu-logs` définit:
-- un format de fichier pour stocker des logs (rapport de tests).
-- un canal de transport MQTT structuré pour rendre observable l'émission des logs.
+- un format de fichier basé sur [**FlatBuffers**](https://flatbuffers.dev/) pour stocker des logs sur forme de rapport.
+- un canal de transport [**MQTT**](https://mqtt.org/) structuré pour rendre observable l'émission des logs.
 
 Les logs peuvent être hétérogènes au niveau:
-- de leur source: chaque source de log est identifié par son **topic MQTT**
-- de leur nature: les **payload** ne contiennent que les données métier, sérialisées en binaire au format [FlatBuffers](https://flatbuffers.dev/).
+- <ins>de leur source</ins>: chaque source de log est identifié par son topic MQTT.
+- <ins>de leur nature</ins>: les payload ne contiennent que les données métier, sérialisées en binaire au format .
 
 ![image](lulu-logs.png)
 
