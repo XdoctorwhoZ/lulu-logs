@@ -1,0 +1,26 @@
+// lulu_export_v2.fbs — Format de fichier .lulu v2
+// Fichier d'export complet basé sur le format streamable unifié.
+// Chaque record est précédé de sa taille (u32 big-endian) pour permettre le streaming.
+
+namespace LuluExport;
+
+// Fichier d'export complet v2.
+// Contrairement à v1, ce format ne contient pas de table enveloppe.
+// Le fichier est simplement une séquence de LogRecord (v2) avec préfixe de taille.
+// 
+// Format binaire:
+//   [u32 length][LogRecord FlatBuffer][u32 length][LogRecord FlatBuffer]...
+//
+// Cela permet:
+//   - Lecture séquentielle sans charger tout le fichier en mémoire
+//   - Ajout de records à la fin du fichier (append-only)
+//   - Compatibilité avec le format streamable pour les transports réseau
+table LuluExportFileV2 {
+  // Version du format d'export
+  version: uint32 = 2;
+  
+  // Réservé pour compatibilité future
+  reserved: uint32 = 0;
+}
+
+root_type LuluExportFileV2;
