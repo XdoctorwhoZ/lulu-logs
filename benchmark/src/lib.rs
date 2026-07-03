@@ -3,6 +3,7 @@
 
 pub mod protobuf;
 pub mod flatbuffers;
+pub mod lulu_logs_generated;
 
 // Re-export for benchmarks
 pub use protobuf::{ProtobufLogWriter, ProtobufLogReader};

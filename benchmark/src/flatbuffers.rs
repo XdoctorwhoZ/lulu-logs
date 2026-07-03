@@ -1,15 +1,12 @@
-use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use flatbuffers::FlatBufferBuilder;
 use std::fs::{File, OpenOptions};
 use std::io::{Write, Read, Seek, SeekFrom};
 use std::path::Path;
 
-// Manually generated FlatBuffers types (equivalent to what flatc would generate)
-// This matches the schema in benchmark/flatbuffers/lulu_logs.fbs
+// Include generated FlatBuffers code
+use crate::lulu_logs_generated;
 
-// Table offsets
-const LOG_RECORD_VTABLE: [u8; 8] = [8, 0, 8, 0, 12, 0, 0, 0]; // Simplified vtable
-
-/// FlatBuffers LogRecord structure
+/// FlatBuffers LogRecord structure (mirrors the generated type for convenience)
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlatBuffersLogRecord {
     pub topic: String,
@@ -43,13 +40,14 @@ impl FlatBuffersLogWriter {
         // Create payload vector
         let payload_offset = builder.create_vector(payload);
         
-        // Create the LogRecord table
-        let log_record_offset = self::create_log_record(
-            &mut builder,
-            topic_offset,
-            payload_offset,
+        // Create the LogRecord using generated code
+        let log_record_args = lulu_logs_generated::lulu_logs::LogRecordArgs {
+            topic: Some(topic_offset),
+            payload: Some(payload_offset),
             timestamp_ns,
-        );
+        };
+        
+        let log_record_offset = lulu_logs_generated::lulu_logs::LogRecord::create(&mut builder, &log_record_args);
         
         // Finish the buffer
         builder.finish(log_record_offset, None);
@@ -74,27 +72,6 @@ impl FlatBuffersLogWriter {
         }
         Ok(())
     }
-}
-
-/// Helper function to create a LogRecord in FlatBuffers
-fn create_log_record(
-    builder: &mut FlatBufferBuilder,
-    topic: WIPOffset<String>,
-    payload: WIPOffset<Vec<u8>>,
-    timestamp_ns: u64,
-) -> WIPOffset<()> {
-    // In FlatBuffers, we need to build the table with offsets
-    // This is a simplified version of what flatc would generate
-    
-    // Start the table
-    let mut table = builder.start_table();
-    
-    // Add fields (in reverse order for FlatBuffers)
-    table.add(2, timestamp_ns, 0); // timestamp_ns at offset 2
-    table.add(1, payload, 0);      // payload at offset 1
-    table.add(0, topic, 0);        // topic at offset 0
-    
-    table.finish()
 }
 
 /// Reader for FlatBuffers with length prefix
@@ -124,7 +101,7 @@ impl FlatBuffersLogReader {
         let mut buf = vec![0u8; length];
         self.file.read_exact(&mut buf)?;
         
-        // Parse the FlatBuffer
+        // Parse the FlatBuffer using generated code
         let record = self::read_log_record(&buf)?;
         
         Ok(Some(record))
@@ -156,93 +133,20 @@ impl FlatBuffersLogReader {
 
 /// Parse a LogRecord from FlatBuffer data
 fn read_log_record(buf: &[u8]) -> std::io::Result<FlatBuffersLogRecord> {
-    // FlatBuffers uses a buffer with a vtable at the start
-    // This is a simplified parser for our specific schema
+    // Get the root table - the buffer should contain just the flatbuffer data
+    // without the length prefix (which was already read by the caller)
+    let root = flatbuffers::root::<lulu_logs_generated::lulu_logs::LogRecord>(buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid root: {:?}", e)))?;
     
-    if buf.len() < 4 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Buffer too short",
-        ));
-    }
+    let topic = root.topic()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
     
-    // Get the root table offset (last 4 bytes in little-endian)
-    let root_offset = u32::from_le_bytes([buf[buf.len()-4], buf[buf.len()-3], buf[buf.len()-2], buf[buf.len()-1]]) as usize;
+    let payload = root.payload()
+        .map(|v| v.iter().collect::<Vec<u8>>())
+        .unwrap_or_default();
     
-    if root_offset >= buf.len() - 4 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Invalid root offset",
-        ));
-    }
-    
-    // Parse the table at root_offset
-    // The table format: [vtable_offset (2 bytes), field0, field1, ...]
-    let vtable_offset = u16::from_le_bytes([buf[root_offset], buf[root_offset+1]]) as usize;
-    
-    // Get the vtable (contains offsets for each field)
-    let vtable_start = root_offset - vtable_offset;
-    
-    // For our schema:
-    // - Field 0: topic (string)
-    // - Field 1: payload (vector)
-    // - Field 2: timestamp_ns (ulong)
-    
-    // Read field offsets from vtable
-    // Each field in vtable is 2 bytes (offset from table start)
-    let topic_field_offset = u16::from_le_bytes([buf[vtable_start], buf[vtable_start+1]]) as usize;
-    let payload_field_offset = u16::from_le_bytes([buf[vtable_start+2], buf[vtable_start+3]]) as usize;
-    let timestamp_field_offset = u16::from_le_bytes([buf[vtable_start+4], buf[vtable_start+5]]) as usize;
-    
-    // Get the actual offsets in the buffer
-    let topic_offset = root_offset + topic_field_offset;
-    let payload_offset = root_offset + payload_field_offset;
-    let timestamp_offset = root_offset + timestamp_field_offset;
-    
-    // Read timestamp (8 bytes, little-endian)
-    let timestamp_ns = u64::from_le_bytes([
-        buf[timestamp_offset],
-        buf[timestamp_offset+1],
-        buf[timestamp_offset+2],
-        buf[timestamp_offset+3],
-        buf[timestamp_offset+4],
-        buf[timestamp_offset+5],
-        buf[timestamp_offset+6],
-        buf[timestamp_offset+7],
-    ]);
-    
-    // Read topic (string offset + length + data)
-    let topic_str_offset = u32::from_le_bytes([
-        buf[topic_offset],
-        buf[topic_offset+1],
-        buf[topic_offset+2],
-        buf[topic_offset+3],
-    ]) as usize;
-    let topic_len = u32::from_le_bytes([
-        buf[topic_offset+4],
-        buf[topic_offset+5],
-        buf[topic_offset+6],
-        buf[topic_offset+7],
-    ]) as usize;
-    let topic_start = topic_str_offset;
-    let topic = String::from_utf8(buf[topic_start..topic_start+topic_len].to_vec())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    
-    // Read payload (vector offset + length + data)
-    let payload_vec_offset = u32::from_le_bytes([
-        buf[payload_offset],
-        buf[payload_offset+1],
-        buf[payload_offset+2],
-        buf[payload_offset+3],
-    ]) as usize;
-    let payload_len = u32::from_le_bytes([
-        buf[payload_offset+4],
-        buf[payload_offset+5],
-        buf[payload_offset+6],
-        buf[payload_offset+7],
-    ]) as usize;
-    let payload_start = payload_vec_offset;
-    let payload = buf[payload_start..payload_start+payload_len].to_vec();
+    let timestamp_ns = root.timestamp_ns();
     
     Ok(FlatBuffersLogRecord {
         topic,

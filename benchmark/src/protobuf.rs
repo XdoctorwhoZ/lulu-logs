@@ -37,8 +37,12 @@ impl ProtobufLogWriter {
         let mut buf = Vec::new();
         record.encode(&mut buf)?;
         
-        // Write varint length prefix
-        prost::encoding::encode_varint(buf.len() as u64, &mut self.file)?;
+        // Write varint length prefix to a temporary buffer
+        let mut length_buf = Vec::new();
+        prost::encoding::encode_varint(buf.len() as u64, &mut length_buf);
+        
+        // Write the length prefix
+        self.file.write_all(&length_buf)?;
         
         // Write the protobuf data
         self.file.write_all(&buf)?;
@@ -70,11 +74,31 @@ impl ProtobufLogReader {
 
     /// Read the next log record
     pub fn next(&mut self) -> std::io::Result<Option<LogRecord>> {
-        // Read varint length
-        let length = match prost::encoding::decode_varint(&mut self.file) {
-            Ok(len) => len as usize,
-            Err(_) => return Ok(None), // EOF
-        };
+        // Read varint length from file into a temporary buffer
+        let mut length_buf = Vec::new();
+        let mut temp = [0u8; 1];
+        loop {
+            match self.file.read_exact(&mut temp) {
+                Ok(_) => {
+                    length_buf.push(temp[0]);
+                    // Check if this is the last byte (MSB is 0)
+                    if temp[0] & 0x80 == 0 {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    if length_buf.is_empty() {
+                        return Ok(None); // EOF
+                    } else {
+                        return Err(e);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        
+        let length = prost::encoding::decode_varint(&mut &length_buf[..])
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))? as usize;
         
         // Read protobuf data
         let mut buf = vec![0u8; length];
@@ -114,7 +138,7 @@ impl ProtobufLogReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+
     use tempfile::NamedTempFile;
 
     #[test]

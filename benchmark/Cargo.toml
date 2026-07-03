@@ -11,7 +11,7 @@ prost = "0.12"
 prost-types = "0.12"
 
 # For FlatBuffers
-flatbuffers = "23.5.26"
+flatbuffers = "25.12.19"
 
 # For benchmarking
 criterion = "0.5"
