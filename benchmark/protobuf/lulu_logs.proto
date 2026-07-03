@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package lulu_logs;
+
+// LogRecord represents a single log entry in the lulu-logs system
+message LogRecord {
+  string topic = 1;      // MQTT topic (e.g., "lulu/sensor/temperature")
+  bytes payload = 2;    // Serialized LogEntry (timestamp, level, type, data)
+  uint64 timestamp_ns = 3; // Optional: nanosecond timestamp
+}

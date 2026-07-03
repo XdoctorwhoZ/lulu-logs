@@ -1,0 +1,38 @@
+[package]
+name = "lulu-logs-benchmark"
+version = "0.1.0"
+edition = "2021"
+authors = ["Xavier Rodriguez"]
+description = "Benchmark: Protobuf vs FlatBuffers for lulu-logs serialization"
+
+[dependencies]
+# For Protobuf
+prost = "0.12"
+prost-types = "0.12"
+
+# For FlatBuffers
+flatbuffers = "25.12.19"
+
+# For benchmarking
+criterion = "0.5"
+
+# For file operations
+tempfile = "3.8"
+
+[dev-dependencies]
+
+[build-dependencies]
+prost-build = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+[[bench]]
+name = "serialization_bench"
+harness = false
