@@ -1,0 +1,16 @@
+# Rust
+/target
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Generated files
+*.pb.rs
+*_generated.rs
+
+# FlatBuffers
+*.bfbs
