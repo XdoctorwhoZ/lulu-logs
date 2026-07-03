@@ -1,0 +1,15 @@
+// FlatBuffers schema for lulu-logs benchmark
+// To compile: flatc --rust benchmark/flatbuffers/lulu_logs.fbs
+
+namespace lulu_logs;
+
+// LogRecord represents a single log entry in the lulu-logs system
+table LogRecord {
+  topic: string;
+  payload: [ubyte];
+  timestamp_ns: ulong;
+}
+
+// File identifier for FlatBuffers
+file_identifier "LULU";
+file_extension "lulu";
