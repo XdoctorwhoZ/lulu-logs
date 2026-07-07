@@ -10,10 +10,13 @@ Les implémentations des clients et outils (application desktop, client Rust, cl
 
 ## Table des matières
 
-1 schema d'un log record
-1.1 key - regles de nommages et objectif
-
-2 stream structure
+- 1 schema d'un log record
+- 1.1 key - regles de nommages et objectif
+- 1.2 timestamp
+- 1.3 level
+- 1.4 type
+- 2 data et encoding des données en fonction du type
+- 3 stream structure (separation des logs par une taille de trame
 
 
 
