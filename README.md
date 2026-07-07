@@ -70,20 +70,34 @@ SORTIE: (source, attribute)
 
 ### 1.2 timestamp
 
-**Type :** `string` (requis)
+**Type :** `u64` (requis)
 
-**Format :** ISO 8601 UTC avec millisecondes
-- Format exact : `YYYY-MM-DDTHH:MM:SS.sssZ`
-- Exemple : `2026-02-26T14:30:00.123Z`
+**Format :** Nanosecondes depuis l'epoch Unix (1970-01-01T00:00:00Z)
+- Exemple : `1772044200123000000` (équivalent à `2026-02-26T14:30:00.123Z`)
 
 **Règles :**
-- Toujours en UTC (suffixe `Z` obligatoire)
-- Précision minimale : milliseconde
-- Doit être un timestamp valide selon RFC 3339
+- Toujours en UTC (par définition de l'epoch Unix)
+- Précision : nanoseconde (1e-9 seconde)
+- Valeur maximale : ~2554 (dépassement de `u64`)
 
 **Objectif :**
 - Permettre une synchronisation temporelle précise entre différents systèmes
-- Faciliter l'analyse et la corrélation des événements
+- Optimiser l'espace (8 octets vs ~24 pour une chaîne ISO 8601) et la performance (pas de parsing)
+
+**Conversion vers ISO 8601 (pour affichage) :**
+```
+ALGORITHME u64_to_iso8601
+ENTRÉE: ns (u64, nanosecondes depuis epoch Unix)
+SORTIE: string (ISO 8601 UTC)
+
+1. seconds ← ns ÷ 1_000_000_000
+2. nanoseconds ← ns % 1_000_000_000
+3. date ← convertir seconds en date UTC
+4. RETOURNER date au format "YYYY-MM-DDTHH:MM:SS" + "." + nanoseconds (9 chiffres) + "Z"
+
+EXEMPLE:
+u64_to_iso8601(1772044200123000000) → "2026-02-26T14:30:00.123000000Z"
+```
 
 ### 1.3 level
 
@@ -135,7 +149,7 @@ SORTIE: (source, attribute)
 ```flatbuffers
 table LogRecord {
   key: string (required);         // Chemin hiérarchique
-  timestamp: string (required);  // ISO 8601 UTC avec millisecondes
+  timestamp_ns: u64 (required);  // Nanosecondes depuis epoch Unix (1970-01-01T00:00:00Z)
   level: LogLevel = Info;        // Niveau de sévérité
   type: DataType (required);     // Type de la donnée
   data: [ubyte] (required);      // Donnée binaire brute
