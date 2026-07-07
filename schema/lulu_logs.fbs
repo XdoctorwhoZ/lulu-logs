@@ -1,8 +1,3 @@
-// lulu_logs.fbs
-// Protocol: lulu-logs v1.4.0
-// Description: Schema for MQTT log payloads — source and attribute are carried
-//              exclusively by the topic, not present in this payload.
-
 namespace LuluLogs;
 
 // ---------------------------------------------------------------------------
@@ -45,11 +40,19 @@ enum DataType : u32 {
 }
 
 // ---------------------------------------------------------------------------
-// Root table — one per MQTT publish.
-// The owning source and attribute name are NOT stored here;
-// they are derived from the MQTT topic.
+// Unified LogRecord — combines source/attribute (from topic) with log data.
+// This single structure replaces both LogEntry (v1) and LogRecord (export).
+// 
+// Stream format: [u32 length (big-endian)][FlatBuffer LogRecord][u32 length]...
+// This allows streaming over any transport without external framing.
 // ---------------------------------------------------------------------------
-table LogEntry {
+table LogRecord {
+  // This contains the full source hierarchy + attribute name.
+  // Example: "psu/power-supply/channel-1/voltage"
+  // Example: "mcp/filesystem/read-file"
+  // Example: "mcp/github/pull-request/status"
+  key: string (required);
+
   // ISO 8601 UTC timestamp with millisecond precision.
   // Example: "2026-02-26T14:30:00.123Z"
   timestamp: string (required);
@@ -66,4 +69,8 @@ table LogEntry {
   data: [ubyte] (required);
 }
 
-root_type LogEntry;
+root_type LogRecord;
+
+// File identifier for FlatBuffers
+file_identifier "LULU";
+file_extension "lulu";
