@@ -22,7 +22,7 @@ Cette spécification définit le format lulu : c'est un format de rapport de tes
 
 ### 1.1 key - règles de nommage et objectif
 
-Le champ `topic` du LogRecord représente la **key** (clé) du log. Il suit une convention hiérarchique pour identifier la source et l'attribut mesuré.
+Le champ `key` du LogRecord représente la **key** (clé) du log. Il suit une convention hiérarchique pour identifier la source et l'attribut mesuré.
 
 **Format général :**
 ```
@@ -42,8 +42,8 @@ Le champ `topic` du LogRecord représente la **key** (clé) du log. Il suit une 
 - Maintenir une hiérarchie claire et lisible
 
 **Exemples :**
-| Topic | Description |
-|-------|-------------|
+| Key | Description |
+|-----|-------------|
 | `mcp/filesystem/read-file` | Lecture de fichier |
 | `mcp/github/pull-request/status` | Statut d'une PR |
 | `psu/power-supply/channel-1/voltage` | Tension canal 1 |
@@ -52,10 +52,10 @@ Le champ `topic` du LogRecord représente la **key** (clé) du log. Il suit une 
 
 **Extraction de la source et de l'attribut :**
 ```rust
-fn parse_topic(topic: &str) -> (String, String) {
-    let parts: Vec<&str> = topic.split('/').collect();
+fn parse_key(key: &str) -> (String, String) {
+    let parts: Vec<&str> = key.split('/').collect();
     if parts.len() < 2 {
-        (topic.to_string(), "".to_string())
+        (key.to_string(), "".to_string())
     } else {
         let source = parts[..parts.len()-1].join("/");
         let attribute = parts.last().unwrap().to_string();
@@ -130,7 +130,7 @@ fn parse_topic(topic: &str) -> (String, String) {
 **Structure FlatBuffers :**
 ```flatbuffers
 table LogRecord {
-  topic: string (required);      // Chemin sans "lulu/" prefix
+  key: string (required);         // Chemin hiérarchique
   timestamp: string (required);  // ISO 8601 UTC avec millisecondes
   level: LogLevel = Info;        // Niveau de sévérité
   type: DataType (required);     // Type de la donnée
@@ -195,7 +195,7 @@ Le champ `data` est un vecteur d'octets bruts (`[ubyte]`). Son interprétation d
 Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `StepEnd` utilisent un encodage JSON pour le champ `data`.
 
 **Contrat commun :**
-- Le consommateur DOIT corrélér un événement de fin avec son événement de début via le couple `(span_id, topic)`
+- Le consommateur DOIT corrélér un événement de fin avec son événement de début via le couple `(span_id, key)`
 - `span_id` est l'identifiant stable de corrélation
 - Un événement `*_end` sans `*_beg` correspondant DOIT être ignoré ou signalé comme anomalie
 
@@ -371,8 +371,8 @@ fn write_record(writer: &mut impl Write, record: &LogRecord) -> io::Result<()> {
 | Règle | Description |
 |-------|-------------|
 | **Taille maximale** | Le LogRecord FlatBuffers ne doit pas excéder **20 480 octets** |
-| **Topic validation** | Le topic doit contenir au moins **1 segment source + 1 attribut** (minimum 2 segments) |
-| **Longueur topic** | Longueur maximale recommandée : **256 caractères** |
+| **Key validation** | La key doit contenir au moins **1 segment source + 1 attribut** (minimum 2 segments) |
+| **Longueur key** | Longueur maximale recommandée : **256 caractères** |
 | **Longueur data** | Taille maximale du champ `data` : **20 000 octets** |
 
 ---
