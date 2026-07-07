@@ -51,17 +51,19 @@ Le champ `key` du LogRecord représente la **key** (clé) du log. Il suit une co
 | `test/scenario/voltage-regulation-3v3` | Scénario de test |
 
 **Extraction de la source et de l'attribut :**
-```rust
-fn parse_key(key: &str) -> (String, String) {
-    let parts: Vec<&str> = key.split('/').collect();
-    if parts.len() < 2 {
-        (key.to_string(), "".to_string())
-    } else {
-        let source = parts[..parts.len()-1].join("/");
-        let attribute = parts.last().unwrap().to_string();
-        (source, attribute)
-    }
-}
+```
+ALGORITHME parse_key
+ENTRÉE: key (chaîne de caractères)
+SORTIE: (source, attribute)
+
+1. Diviser key par '/' → parts
+2. SI length(parts) < 2 ALORS
+3.   RETOURNER (key, "")
+4. SINON
+5.   source ← join(parts[0..length(parts)-1], "/")
+6.   attribute ← parts[length(parts)-1]
+7.   RETOURNER (source, attribute)
+8. FIN SI
 ```
 
 ### 1.2 timestamp
@@ -322,48 +324,33 @@ Stream: [00 00 00 2A][FLATBUFFER_DATA_42_bytes][00 00 00 35][FLATBUFFER_DATA_53_
 
 ### Algorithme de lecture
 
-```rust
-fn read_next_record(reader: &mut impl Read) -> io::Result<Option<LogRecord>> {
-    // 1. Lire le préfixe de taille (4 octets)
-    let mut length_bytes = [0u8; 4];
-    match reader.read_exact(&mut length_bytes) {
-        Ok(_) => {},
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    
-    // 2. Convertir en u32 big-endian
-    let length = u32::from_be_bytes(length_bytes) as usize;
-    
-    // 3. Lire le buffer FlatBuffer
-    let mut buf = vec![0u8; length];
-    reader.read_exact(&mut buf)?;
-    
-    // 4. Parser le FlatBuffer
-    let record = flatbuffers::root::<LogRecord>(&buf)?;
-    
-    Ok(Some(record))
-}
+```
+ALGORITHME read_next_record
+ENTRÉE: reader (flux d'octets)
+SORTIE: LogRecord ou NULL (fin de flux)
+
+1. Lire 4 octets depuis reader → length_bytes
+2. SI EOF ALORS RETOURNER NULL
+3. SI erreur ALORS RETOURNER ERREUR
+4. length ← convertir length_bytes en u32 big-endian
+5. Allouer buffer de taille length
+6. Lire length octets depuis reader → buffer
+7. SI EOF ou erreur ALORS RETOURNER ERREUR
+8. Parser buffer comme FlatBuffer LogRecord → record
+9. RETOURNER record
 ```
 
 ### Algorithme d'écriture
 
-```rust
-fn write_record(writer: &mut impl Write, record: &LogRecord) -> io::Result<()> {
-    // 1. Sérialiser le LogRecord en FlatBuffer
-    let mut builder = FlatBufferBuilder::new();
-    // ... construction du LogRecord ...
-    builder.finish(log_record_offset, None);
-    let buf = builder.finished_data();
-    
-    // 2. Écrire le préfixe de taille (big-endian)
-    writer.write_all(&(buf.len() as u32).to_be_bytes())?;
-    
-    // 3. Écrire le buffer FlatBuffer
-    writer.write_all(buf)?;
-    
-    Ok(())
-}
+```
+ALGORITHME write_record
+ENTRÉE: writer (flux d'octets), record (LogRecord)
+
+1. Sérialiser record en FlatBuffer → buffer
+2. length ← taille de buffer en octets
+3. Écrire length (u32 big-endian) vers writer
+4. Écrire buffer vers writer
+5. RETOURNER succès
 ```
 
 ### Contraintes
