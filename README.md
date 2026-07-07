@@ -28,16 +28,6 @@
 
 ## 1. Motivations et objectifs
 
-### 1.1 Problèmes résolus par v2.0.0
-
-| Problème (v1.4.0) | Solution (v2.0.0) |
-|-------------------|-------------------|
-| **Dépendance à MQTT** | Format streamable indépendant du transport |
-| **Double sérialisation** (LogEntry → payload → LogRecord) | Une seule structure LogRecord |
-| **Complexité d'implémentation** | Architecture simplifiée |
-| **Overhead réseau** | Réduction de la taille des messages |
-| **Latence MQTT** | Support des transports directs (TCP, etc.) |
-| **Flexibilité limitée** | N'importe quel transport peut être utilisé |
 
 ### 1.2 Objectifs de conception
 
@@ -48,63 +38,6 @@
 - ✅ **Performance** : Réduction de l'overhead de sérialisation
 - ✅ **Simplicité** : Moins de code, moins de bugs
 
----
-
-## 2. Changements majeurs par rapport à v1.4.0
-
-### 2.1 Fusion de LogEntry et LogRecord
-
-**v1.4.0:**
-```
-MQTT Topic: lulu/psu/power-supply/channel-1/voltage
-MQTT Payload: FlatBuffer(LogEntry)
-  - timestamp
-  - level
-  - type
-  - data
-
-Fichier .lulu: FlatBuffer(LogRecord)
-  - topic
-  - payload (contient LogEntry)
-```
-
-**v2.0.0:**
-```
-LogRecord (unifié):
-  - topic: "psu/power-supply/channel-1/voltage"
-  - timestamp
-  - level
-  - type
-  - data
-```
-
-### 2.2 Format streamable
-
-**v1.4.0:**
-- MQTT: messages individuels
-- Fichiers: tableau de LogRecord dans LuluExportFile
-
-**v2.0.0:**
-- **Tous les transports**: séquence de `[u32 length][LogRecord FlatBuffer]`
-- Permet le streaming sans connaître la taille totale
-- Compatible avec l'append-only (ajout à la fin)
-
-### 2.3 Transport agnostique
-
-**v1.4.0:**
-- Uniquement MQTT pour la transmission en temps réel
-- Fichiers .lulu pour l'export
-
-**v2.0.0:**
-- MQTT (optionnel)
-- TCP direct
-- WebSocket
-- UDP (pour les cas tolérants aux pertes)
-- Fichiers
-- Mémoire partagée
-- N'importe quel protocole supportant les octets
-
----
 
 ## 3. Format unifié LogRecord
 
