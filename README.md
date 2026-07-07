@@ -85,17 +85,18 @@ SORTIE: (source, attribute)
 - Optimiser l'espace (8 octets vs ~24 pour une chaîne ISO 8601) et la performance (pas de parsing)
 
 **Conversion vers ISO 8601 (pour affichage) :**
-```python
-import datetime
+```
+ALGORITHME u64_to_iso8601
+ENTRÉE: ns (u64, nanosecondes depuis epoch Unix)
+SORTIE: string (ISO 8601 UTC)
 
-def u64_to_iso8601(ns: int) -> str:
-    seconds = ns // 1_000_000_000
-    nanoseconds = ns % 1_000_000_000
-    dt = datetime.datetime.utcfromtimestamp(seconds)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S") + f".{nanoseconds:09d}Z"
+1. seconds ← ns ÷ 1_000_000_000
+2. nanoseconds ← ns % 1_000_000_000
+3. date ← convertir seconds en date UTC
+4. RETOURNER date au format "YYYY-MM-DDTHH:MM:SS" + "." + nanoseconds (9 chiffres) + "Z"
 
-# Exemple
-print(u64_to_iso8601(1772044200123000000))  # 2026-02-26T14:30:00.123000000Z
+EXEMPLE:
+u64_to_iso8601(1772044200123000000) → "2026-02-26T14:30:00.123000000Z"
 ```
 
 ### 1.3 level

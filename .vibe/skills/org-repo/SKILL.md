@@ -14,3 +14,8 @@ user-invocable: false
    - `schema/` : Contient **uniquement** les schémas FlatBuffers.
    - `benchmark/` : Contient **uniquement** les benchmarks de tests.
    - `justifications/` : Contient **uniquement** les documents de justification des choix techniques.
+
+3. **Contenu de la Spécification** :
+   - La spécification **ne doit pas** contenir de code source (Rust, Python, etc.).
+   - Les exemples de code **doivent** être placés dans des fichiers dédiés (ex: `examples/` ou dans les justifications).
+   - Les algorithmes **peuvent** être décrits en pseudo-code (ex: `ALGORITHME parse_key`).
