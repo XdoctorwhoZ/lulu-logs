@@ -1,32 +1,19 @@
-# lulu-logs v2.0.0 — Spécification du protocole unifié
+# LuLu Logs
 
-> **Version** : 2.0.0 (Draft)
-> **Date** : 2026-07-03
-> **Statut** : Proposition (en cours de discussion)
+Lulu-Logs est un système de logging conçu pour fusionner des données de test hétérogènes dans une timeline unique et produire des rapports de test interactifs.
 
-**lulu-logs v2.0.0** est une évolution majeure du protocole qui unifie les concepts de `LogEntry` et `LogRecord` en une seule structure, et adopte un format **streamable** compatible avec n'importe quel type de transport (MQTT, TCP, WebSocket, fichiers, etc.).
+Cette specification définit le format lulu: c'est un format de rapport de tests binaire & streamable basé sur [**FlatBuffers**](https://flatbuffers.dev/).
+
+Les implémentations des clients et outils (application desktop, client Rust, client Python, etc.) sont hébergées dans des dépôts séparés.
 
 ---
 
 ## Table des matières
 
-1. [Motivations et objectifs](#1-motivations-et-objectifs)
-2. [Changements majeurs par rapport à v1.4.0](#2-changements-majeurs-par-rapport-à-v140)
-3. [Format unifié LogRecord](#3-format-unifié-logrecord)
-4. [Format streamable avec préfixe de taille](#4-format-streamable-avec-préfixe-de-taille)
-5. [Transports supportés](#5-transports-supportés)
-6. [Convention des topics (héritage v1)](#6-convention-des-topics-héritage-v1)
-7. [Types de données et encodage](#7-types-de-données-et-encodage)
-8. [Types spéciaux — spans génériques et dérivés](#8-types-spéciaux--spans-génériques-et-dérivés)
-9. [Schémas FlatBuffers](#9-schémas-flatbuffers)
-10. [Exemples](#10-exemples)
-11. [Règles d'encodage et contraintes](#11-règles-dencodage-et-contraintes)
-12. [Migration depuis v1.4.0](#12-migration-depuis-v140)
-13. [Compatibilité](#13-compatibilité)
+TODO
 
----
 
-## 1. Motivations et objectifs
+
 
 
 ### 1.2 Objectifs de conception
