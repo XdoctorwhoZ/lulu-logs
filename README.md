@@ -4,6 +4,8 @@ Lulu-Logs est un système de logging conçu pour fusionner des données de test 
 
 Cette spécification définit le format lulu : c'est un format de rapport de tests binaire & streamable basé sur [**FlatBuffers**](https://flatbuffers.dev/).
 
+![banner](lulu-logs.png)
+
 ---
 
 ## Table des matières
