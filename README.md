@@ -357,11 +357,5 @@ ENTRÉE: writer (flux d'octets), record (LogRecord)
 
 | Règle | Description |
 |-------|-------------|
-| **Taille maximale** | Le LogRecord FlatBuffers ne doit pas excéder **20 480 octets** |
 | **Key validation** | La key doit contenir au moins **1 segment source + 1 attribut** (minimum 2 segments) |
 | **Longueur key** | Longueur maximale recommandée : **256 caractères** |
-| **Longueur data** | Taille maximale du champ `data` : **20 000 octets** |
-
----
-
-*Document réorganisé pour la branche `review_and_cleanup` — 2026-07-03*
