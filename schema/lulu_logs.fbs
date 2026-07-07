@@ -1,8 +1,3 @@
-// lulu_logs_v2.fbs
-// Protocol: lulu-logs v2.0.0
-// Description: Unified streamable log format - merges LogRecord and LogEntry into a single structure
-//              with length-prefixed streaming support for any transport (MQTT, TCP, files, etc.)
-
 namespace LuluLogs;
 
 // ---------------------------------------------------------------------------
@@ -52,12 +47,11 @@ enum DataType : u32 {
 // This allows streaming over any transport without external framing.
 // ---------------------------------------------------------------------------
 table LogRecord {
-  // Topic path WITHOUT the "lulu/" prefix.
   // This contains the full source hierarchy + attribute name.
   // Example: "psu/power-supply/channel-1/voltage"
   // Example: "mcp/filesystem/read-file"
   // Example: "mcp/github/pull-request/status"
-  topic: string (required);
+  key: string (required);
 
   // ISO 8601 UTC timestamp with millisecond precision.
   // Example: "2026-02-26T14:30:00.123Z"
@@ -78,5 +72,5 @@ table LogRecord {
 root_type LogRecord;
 
 // File identifier for FlatBuffers
-file_identifier "LUL2";
+file_identifier "LULU";
 file_extension "lulu";
