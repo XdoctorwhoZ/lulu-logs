@@ -11,5 +11,6 @@ user-invocable: false
 1. **Spécification** : La spécification du projet **doit** être documentée dans le fichier `README.md` à la racine du répo.
 
 2. **Dossiers Spécifiques** :
-   - `schema/` : Contient **uniquement** les schémas Protobuf.
+   - `schema/` : Contient **uniquement** les schémas FlatBuffers.
    - `benchmark/` : Contient **uniquement** les benchmarks de tests.
+   - `justifications/` : Contient **uniquement** les documents de justification des choix techniques.
