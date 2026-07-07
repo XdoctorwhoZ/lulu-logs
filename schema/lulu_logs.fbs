@@ -1,7 +1,7 @@
 namespace LuluLogs;
 
 // ---------------------------------------------------------------------------
-// Log severity levels — ordered from least to most severe.
+// Log severity levels  ordered from least to most severe.
 // ---------------------------------------------------------------------------
 enum LogLevel : byte {
   Trace = 0,
@@ -13,7 +13,7 @@ enum LogLevel : byte {
 }
 
 // ---------------------------------------------------------------------------
-// Data type enum — determines how to interpret the raw bytes in `data`.
+// Data type enum  determines how to interpret the raw bytes in `data`.
 // ---------------------------------------------------------------------------
 enum DataType : u32 {
   // Primitive types
@@ -40,7 +40,7 @@ enum DataType : u32 {
 }
 
 // ---------------------------------------------------------------------------
-// Unified LogRecord — combines source/attribute (from topic) with log data.
+// Unified LogRecord  combines source/attribute (from topic) with log data.
 // This single structure replaces both LogEntry (v1) and LogRecord (export).
 // 
 // Stream format: [u32 length (big-endian)][FlatBuffer LogRecord][u32 length]...
@@ -53,9 +53,10 @@ table LogRecord {
   // Example: "mcp/github/pull-request/status"
   key: string (required);
 
-  // ISO 8601 UTC timestamp with millisecond precision.
-  // Example: "2026-02-26T14:30:00.123Z"
-  timestamp: string (required);
+  // Timestamp as nanoseconds since Unix epoch (1970-01-01T00:00:00Z).
+  // This is more space-efficient (8 bytes vs ~24 for ISO 8601) and faster to parse.
+  // Example: 1772044200123000000 = 2026-02-26T14:30:00.123Z
+  timestamp_ns: u64 (required);
 
   // Severity level of this log entry. Defaults to Info.
   level: LogLevel = Info;
