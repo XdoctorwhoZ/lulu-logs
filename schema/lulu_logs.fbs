@@ -24,11 +24,11 @@ enum DataType : u32 {
   Float64 = 4,
   Bool = 5,
   Json = 6,
-  Bytes = 7,
 
   // Specialized binary types
-  NetPacket = 8,
-  SerialChunk = 9,
+  Bytes = 100,
+  NetPacket = 101,
+  SerialChunk = 102,
 
   // Span types (generic and derived) - grouped together starting at 1000
   SpanBeg = 1000,

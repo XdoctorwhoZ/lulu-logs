@@ -6,40 +6,47 @@ Cette spécification définit le format lulu : c'est un format de rapport de tes
 
 ![banner](lulu-logs.png)
 
----
-
 ## Table des matières
 
 1. [Schéma d'un LogRecord](#1-schéma-dun-logrecord)
-   1.1. [key - règles de nommage et objectif](#11-key---règles-de-nommage-et-objectif)
-   1.2. [timestamp](#12-timestamp)
-   1.3. [level](#13-level)
-   1.4. [type](#14-type)
+   - [1.1 key - règles de nommage et objectif](#11-key---règles-de-nommage-et-objectif)
+   - [1.2 timestamp](#12-timestamp)
+   - [1.3 level](#13-level)
+   - [1.4 type](#14-type)
 2. [Data et encodage des données en fonction du type](#2-data-et-encodage-des-données-en-fonction-du-type)
 3. [Stream structure (séparation des logs par une taille de trame)](#3-stream-structure-séparation-des-logs-par-une-taille-de-trame)
 
----
-
 ## 1. Schéma d'un LogRecord
+
+Un **LogRecord** est l'unité fondamentale de données dans le format LuLu Logs. Chaque record représente un événement ou une mesure atomique, identifié de manière unique et horodaté avec une précision nanosecondes.
+
+Le schéma est défini en **FlatBuffers**, un format de sérialisation binaire conçu pour l'efficacité mémoire et la performance. FlatBuffers permet un accès direct aux champs sans parsing ni allocation intermédiaire, ce qui est idéal pour le traitement en temps réel de grands volumes de logs.
+
+**Structure de base :**
+- `key` : Identifiant hiérarchique de la source et de l'attribut
+- `timestamp_ns` : Horodatage en nanosecondes depuis l'epoch Unix
+- `level` : Niveau de sévérité (Trace, Debug, Info, Warn, Error, Fatal)
+- `type` : Type des données encapsulées dans le champ `data`
+- `data` : Données binaires dont l'interprétation dépend du champ `type`
+
+Cette structure simple mais extensible permet de représenter à la fois des métriques numériques, des événements textuels, des traces structurées, et des données binaires arbitraires, tout en maintenant un format compact et rapide à parser.
 
 ### 1.1 key - règles de nommage et objectif
 
-Le champ `key` du LogRecord représente la **key** (clé) du log. Il suit une convention hiérarchique pour identifier la source et l'attribut mesuré.
+Le champ `key` du LogRecord représente la **key** (clé) du log. Il suit une convention hiérarchique par layer comme les topics MQTT.
 
 **Format général :**
 ```
-{source_segment_1}/{source_segment_2}/.../{source_segment_n}/{attribute_name}
+{layer_1}/{layer_2}/.../{layer_n}
 ```
 
 **Règles de nommage :**
 - Les segments sont des chaînes alphanumériques en minuscules
 - Séparateur autorisé : tiret `-`
 - Aucun segment ne peut être vide
-- `{attribute_name}` est un identifiant simple (pas de `/` imbriqué)
 - Longueur maximale recommandée : 256 caractères
 
 **Objectif :**
-- Identifier de manière unique la source et l'attribut mesuré
 - Permettre un routage et un filtrage efficace des logs
 - Maintenir une hiérarchie claire et lisible
 
@@ -51,22 +58,6 @@ Le champ `key` du LogRecord représente la **key** (clé) du log. Il suit une co
 | `psu/power-supply/channel-1/voltage` | Tension canal 1 |
 | `sensor/temperature/ambient` | Température ambiante |
 | `test/scenario/voltage-regulation-3v3` | Scénario de test |
-
-**Extraction de la source et de l'attribut :**
-```
-ALGORITHME parse_key
-ENTRÉE: key (chaîne de caractères)
-SORTIE: (source, attribute)
-
-1. Diviser key par '/' → parts
-2. SI length(parts) < 2 ALORS
-3.   RETOURNER (key, "")
-4. SINON
-5.   source ← join(parts[0..length(parts)-1], "/")
-6.   attribute ← parts[length(parts)-1]
-7.   RETOURNER (source, attribute)
-8. FIN SI
-```
 
 ### 1.2 timestamp
 
@@ -83,21 +74,6 @@ SORTIE: (source, attribute)
 **Objectif :**
 - Permettre une synchronisation temporelle précise entre différents systèmes
 - Optimiser l'espace (8 octets vs ~24 pour une chaîne ISO 8601) et la performance (pas de parsing)
-
-**Conversion vers ISO 8601 (pour affichage) :**
-```
-ALGORITHME u64_to_iso8601
-ENTRÉE: ns (u64, nanosecondes depuis epoch Unix)
-SORTIE: string (ISO 8601 UTC)
-
-1. seconds ← ns ÷ 1_000_000_000
-2. nanoseconds ← ns % 1_000_000_000
-3. date ← convertir seconds en date UTC
-4. RETOURNER date au format "YYYY-MM-DDTHH:MM:SS" + "." + nanoseconds (9 chiffres) + "Z"
-
-EXEMPLE:
-u64_to_iso8601(1772044200123000000) → "2026-02-26T14:30:00.123000000Z"
-```
 
 ### 1.3 level
 
@@ -131,9 +107,9 @@ u64_to_iso8601(1772044200123000000) → "2026-02-26T14:30:00.123000000Z"
 | `4` | `Float64` | Flottant double précision |
 | `5` | `Bool` | Booléen (1 octet) |
 | `6` | `Json` | Document JSON |
-| `7` | `Bytes` | Données binaires opaques |
-| `8` | `NetPacket` | Paquet réseau |
-| `9` | `SerialChunk` | Fragment de liaison série |
+| `100` | `Bytes` | Données binaires opaques |
+| `101` | `NetPacket` | Paquet réseau |
+| `102` | `SerialChunk` | Fragment de liaison série |
 | `1000` | `SpanBeg` | Début de span (JSON) |
 | `1001` | `SpanEnd` | Fin de span (JSON) |
 | `1002` | `ScenarioBeg` | Début de scénario (JSON) |
@@ -144,17 +120,6 @@ u64_to_iso8601(1772044200123000000) → "2026-02-26T14:30:00.123000000Z"
 **Objectif :**
 - Définir le format des données dans le champ `data`
 - Permettre une interprétation correcte des octets bruts
-
-**Structure FlatBuffers :**
-```flatbuffers
-table LogRecord {
-  key: string (required);         // Chemin hiérarchique
-  timestamp_ns: u64 (required);  // Nanosecondes depuis epoch Unix (1970-01-01T00:00:00Z)
-  level: LogLevel = Info;        // Niveau de sévérité
-  type: DataType (required);     // Type de la donnée
-  data: [ubyte] (required);      // Donnée binaire brute
-}
-```
 
 ---
 
@@ -196,15 +161,15 @@ Le champ `data` est un vecteur d'octets bruts (`[ubyte]`). Son interprétation d
 - Doit être un document JSON valide
 - Exemple : `{"key": "value"}` → octets UTF-8
 
-**Bytes (7)**
+**Bytes (100)**
 - Encodage : octets bruts
 - Pas d'interprétation définie
 
-**NetPacket (8)**
+**NetPacket (101)**
 - Encodage : octets bruts
 - Contient un paquet réseau complet
 
-**SerialChunk (9)**
+**SerialChunk (102)**
 - Encodage : octets bruts
 - Contient un fragment de liaison série
 
@@ -213,17 +178,15 @@ Le champ `data` est un vecteur d'octets bruts (`[ubyte]`). Son interprétation d
 Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `StepEnd` utilisent un encodage JSON pour le champ `data`.
 
 **Contrat commun :**
-- Le consommateur DOIT corrélér un événement de fin avec son événement de début via le couple `(span_id, key)`
-- `span_id` est l'identifiant stable de corrélation
+- Le consommateur DOIT corrélér un événement de fin avec son événement de début via le couple `(id, key)`
+- `id` est l'identifiant stable de corrélation (et aussi le nom lisible)
 - Un événement `*_end` sans `*_beg` correspondant DOIT être ignoré ou signalé comme anomalie
 
 #### SpanBeg (1000)
 **Champ `data` (JSON) :**
 ```json
 {
-  "span_id": "string (requis)",
-  "name": "string (optionnel)",
-  "kind": "string (requis)",
+  "id": "string (requis)",
   "metadata": "object (optionnel)"
 }
 ```
@@ -232,27 +195,21 @@ Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `Ste
 **Champ `data` (JSON) :**
 ```json
 {
-  "span_id": "string (requis)",
-  "name": "string (optionnel)",
-  "kind": "string (requis)",
+  "id": "string (requis)",
   "success": "bool (requis)",
   "error": "string (requis si success=false)",
   "duration_ms": "uint64 (optionnel)",
-  "metadata": "object (optionnel)",
-  "result": "any JSON (optionnel)"
+  "metadata": "object (optionnel)"
 }
 ```
 
 #### ScenarioBeg (1002) et ScenarioEnd (1003)
-- `kind` est implicite et vaut `"scenario"`
-- `span_id` reste obligatoire
-- `name` contient le nom lisible du scénario
+- `id` est obligatoire (identifiant et nom du scénario)
 
 **Exemple ScenarioBeg :**
 ```json
 {
-  "span_id": "scenario-voltage-regulation-3v3",
-  "name": "voltage-regulation-3v3",
+  "id": "voltage-regulation-3v3",
   "metadata": {
     "target_voltage": 3.3,
     "tolerance_v": 0.05
@@ -263,8 +220,7 @@ Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `Ste
 **Exemple ScenarioEnd (succès) :**
 ```json
 {
-  "span_id": "scenario-voltage-regulation-3v3",
-  "name": "voltage-regulation-3v3",
+  "id": "voltage-regulation-3v3",
   "success": true,
   "duration_ms": 24,
   "result": {
@@ -275,15 +231,12 @@ Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `Ste
 ```
 
 #### StepBeg (1004) et StepEnd (1005)
-- `kind` est implicite et vaut `"step"`
-- `span_id` reste obligatoire
-- `name` contient le nom lisible de l'étape
+- `id` est obligatoire (identifiant et nom de l'étape)
 
 **Exemple StepBeg :**
 ```json
 {
-  "span_id": "step-measure-voltage-001",
-  "name": "measure-voltage",
+  "id": "measure-voltage",
   "metadata": {
     "channel": 1,
     "expected_v": 3.3
@@ -294,8 +247,7 @@ Les types `SpanBeg`, `SpanEnd`, `ScenarioBeg`, `ScenarioEnd`, `StepBeg`, et `Ste
 **Exemple StepEnd :**
 ```json
 {
-  "span_id": "step-measure-voltage-001",
-  "name": "measure-voltage",
+  "id": "measure-voltage",
   "success": true,
   "duration_ms": 5,
   "result": {
@@ -368,10 +320,3 @@ ENTRÉE: writer (flux d'octets), record (LogRecord)
 4. Écrire buffer vers writer
 5. RETOURNER succès
 ```
-
-### Contraintes
-
-| Règle | Description |
-|-------|-------------|
-| **Key validation** | La key doit contenir au moins **1 segment source + 1 attribut** (minimum 2 segments) |
-| **Longueur key** | Longueur maximale recommandée : **256 caractères** |
